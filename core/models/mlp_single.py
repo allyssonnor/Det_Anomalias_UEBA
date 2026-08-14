@@ -1,4 +1,4 @@
-#NOVO MODELO DO MLP_SINGLE
+# MELHOR MODELO DO MLP_SINGLE
 import numpy as np
 from sklearn.neural_network import MLPRegressor
 import warnings
@@ -10,10 +10,10 @@ class MLPSingleModel(BaseModel):
     """
     MLP Single (Otimizado para CPU usando Scikit-Learn).
     
-    Recebe os dados 3D do TemporalBuilder e transforma em uma representação 2D,
-    combinando o último evento do usuário com a média histórica do seu contexto temporal.
+    Recebe os dados 3D do TemporalBuilder e transforma em uma representação 2D.
+    Combina o último evento do usuário com a média histórica do seu contexto temporal.
     A rede tenta reconstruir essa representação compacta. O erro quadrático médio (MSE)
-    indica a taxa de anômala.
+    indica a taxa de anomalia.
     """
 
     def __init__(self, config):
