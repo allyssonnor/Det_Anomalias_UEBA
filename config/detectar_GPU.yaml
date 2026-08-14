@@ -13,27 +13,27 @@ base_config: "config/detectar_GPU.yaml"
 # 1. MATRIZ DE DATASETS 
 # ==============================================================================
 datasets:
-#  - name: "Synthetic"
-#    overrides: {}   # Usa os caminhos definidos na base_config (seção 5 - data)
+  - name: "Synthetic"
+    overrides: {}   # Usa os caminhos definidos na base_config (seção 5 - data)
 
-  - name: "CERT"
-    overrides:
-      data.train_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/CERT/train"
-      data.val_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/CERT/val"
-      data.test_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/CERT/test"
-      data.target_col: "Is_Anomaly"
-      data.label_filename: "labels.csv"
+#  - name: "CERT"
+#    overrides:
+#      data.train_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/CERT/train"
+#      data.val_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/CERT/val"
+#      data.test_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/CERT/test"
+#      data.target_col: "Is_Anomaly"
+#      data.label_filename: "labels.csv"
 
-  - name: "LANL"
-    overrides:
-      data.train_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/lanl/train"
-      data.val_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/lanl/val"
-      data.test_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/lanl/test"
-      data.target_col: "Is_Anomaly"
-      data.label_filename: "gabarito.csv"
+#  - name: "LANL"
+#    overrides:
+#      data.train_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/lanl/train"
+#      data.val_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/lanl/val"
+#      data.test_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/lanl/test"
+#      data.target_col: "Is_Anomaly"
+#      data.label_filename: "gabarito.csv"
 
 # ==============================================================================
-# 2. CONFIGURAÇÕES DE MODELOS (PRESETS PARA O RUNNER - GPU OPTIMIZED)
+# 2. CONFIGURAÇÕES DE MODELOS (PRESETS PARA GPU)
 # ==============================================================================
 model_presets:
   # ------------------------------------------------------------
@@ -46,26 +46,6 @@ model_presets:
 #      model.mlp_single:
 #        hidden_layer_sizes: [32]      
 #        max_iter: 50                      
-  # ------------------------------------------------------------
-  # MLP Sem_Flat_CPU
-  # ------------------------------------------------------------
-#  - name: "MLP_Sem_Flat_CPU"
-#    overrides:
-#      model.type: "mlp_sem_flat"
-#      training.batch_size: 64
-#      model.mlp_single:
-#        hidden_layer_sizes: [32]      
-#        max_iter: 50                      
-  # ------------------------------------------------------------
-  # MLP Zero
-  # ------------------------------------------------------------
-#  - name: "MLP_Zero"
-#    overrides:
-#      model.type: "mlp_zero"
-#      training.batch_size: 64
-#      model.mlp_single:
-#        hidden_layer_sizes: [32]
-#        max_iter: 50
   # ------------------------------------------------------------
   # Isolation Forest CPU
   # ------------------------------------------------------------
@@ -92,63 +72,10 @@ model_presets:
 #      model.type: "ocsvm"
 #      model.ocsvm:
 #        nu: 0.05
-  # ------------------------------------------------------------
-  # MLP Deep L2
-  # ------------------------------------------------------------
-#  - name: "MLP_Deep_L2"
-#    overrides:
-#      model.type: "mlp_single"
-#      model.mlp_single.hidden_layer_sizes: [128, 64, 32]
-#      model.mlp_single.max_iter: 50       # Reduzido de 1500 para 50 para pareamento metodológico
-#      model.mlp_single.alpha: 0.0005
-#      model.mlp_single.solver: "adam"
-#      model.mlp_single.early_stopping: true
-#      model.mlp_single.validation_fraction: 0.15
-#      model.mlp_single.learning_rate_init: 0.001
-  # ------------------------------------------------------------
-  # MLP Wide Adam
-  # ------------------------------------------------------------
-#  - name: "MLP_Wide_Adam"
-#    overrides:
-#      model.type: "mlp_single"
-#      model.mlp_single.hidden_layer_sizes: [256, 128]
-#      model.mlp_single.max_iter: 50       # Alinhado em 50 épocas máximas
-#      model.mlp_single.alpha: 0.001
-#      model.mlp_single.solver: "adam"
-#      model.mlp_single.early_stopping: true
-#      model.mlp_single.validation_fraction: 0.15
-  # ------------------------------------------------------------
-  # MLP SGD Adaptive
-  # ------------------------------------------------------------  
-#  - name: "MLP_SGD_Adaptive"
-#    overrides:
-#      model.type: "mlp_single"
-#      model.mlp_single.hidden_layer_sizes: [128, 64]
-#      model.mlp_single.max_iter: 50       # Alinhado em 50 épocas máximas
-#      model.mlp_single.alpha: 0.0001
-#      model.mlp_single.solver: "sgd"
-#      model.mlp_single.learning_rate: "adaptive"
-#      model.mlp_single.learning_rate_init: 0.01
-#      model.mlp_single.momentum: 0.9
-#      model.mlp_single.early_stopping: true
-#      model.mlp_single.validation_fraction: 0.15
-  # ------------------------------------------------------------
-  # MLP Regularized L2
-  # ------------------------------------------------------------
-#  - name: "MLP_Regularized_L2"
-#    overrides:
-#      model.type: "mlp_single"
-#      training.batch_size: 256
-#      model.mlp_single:
-#        hidden_layer_sizes: [64, 32]      # Estrutura idêntica ao MLP Single e MLP Sem Flat
-#        max_iter: 50                      # Alinhado rigorosamente em 50 épocas
-#        alpha: 0.01                       # Força de regularização L2
-#        solver: "adam"
-#        early_stopping: true
 
 # ------------------------------------------------------------
 # ------------------------------------------------------------
-# --- Modelos para Sequências Complexas na GPU) ---
+# --- Modelos para Sequências Complexas na GPU(T4 Colab) ---
 # ------------------------------------------------------------
 # ------------------------------------------------------------
 # ------------------------------------------------------------
@@ -181,13 +108,13 @@ model_presets:
 #      model.ensemble.models: ["mlp_autoencoder", "lstm_autoencoder", "isolation_forest"]
 #      model.ensemble.weights: [0.3, 0.4, 0.3]
 #      # Os submodelos herdam as configurações tiny via seus próprios presets,
-#      # mas forçamos novamente aqui para garantir:
-#      model.mlp_autoencoder.dense_units: [32, 16]       # depois mudar para [32, 16, 8] OU [32, 16]
+#      # mas pode ser forçado aqui, para garantir:
+#      model.mlp_autoencoder.dense_units: [32, 16]       
 #      model.mlp_autoencoder.latent_dim: 4
-#      model.lstm_autoencoder.lstm_units: [32, 16]       # depois mudar para [32, 16, 8] OU [32, 16]
+#      model.lstm_autoencoder.lstm_units: [32, 16]       
 #      model.lstm_autoencoder.latent_dim: 4
-#      training.batch_size: 64                          # depois mudar para 64
-#      training.epochs: 50                              # depois mudar para 50
+#      training.batch_size: 64                          
+#      training.epochs: 50                              
   # ------------------------------------------------------------
   # MLP_Autoencoder_ON_ROIDS
   # ------------------------------------------------------------
@@ -220,20 +147,17 @@ settings:
   # Diretório onde os resultados do Google Colab serão salvos
   results_root: "/content/drive/MyDrive/Project_Detector/results/colab_gpu_runs"
 
-  # [COMENTADO] Desativado para a rodada final rápida focada apenas nos datasets base
-#  isolated_tests_root: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/synthetic"
-
   # Sementes completas para reprodutibilidade e cálculo de intervalo de confiança
   seeds: [42, 123, 999]
 
-  generate_plots: true
+#  generate_plots: true
   save_checkpoints: true
 
 # ==============================================================================
 # 5. CONFIGURAÇÃO BASE (DATA, MODELO, TREINO, FEATURES, ETC.)
 # ==============================================================================
 
-# --- CAMADA DE DADOS (Google Drive Paths) ---
+# --- CAMADA DE DADOS (Google Colab Paths) ---
 data:
   train_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/synthetic/train"
   val_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/synthetic/val"
