@@ -51,7 +51,7 @@ def _discover_models():
             
     _DISCOVERED = True
 
-# Executa a descoberta no momento da importação (ou pode ser lazy, veja nota abaixo)
+# Executa a descoberta no momento da importação
 _discover_models()
 
 
@@ -72,7 +72,7 @@ class ModelFactory:
         model = model_class(config)
         
         # Validação do contrato obrigatório (fit e score)
-        # Dica: Idealmente isso deveria estar na __init_subclass__ da BaseModel para evitar checagem em runtime
+        # Idealmente isso deveria estar na __init_subclass__ da BaseModel para evitar checagem em runtime
         required = ("fit", "score")
         missing = [m for m in required if not callable(getattr(model, m, None))]
         if missing:
