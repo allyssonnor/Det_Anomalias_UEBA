@@ -1,5 +1,4 @@
 # core/trainer.py
-# VERSÃO COMPLETA E BLINDADA CONTRA FALHAS SILENCIOSAS E VAZAMENTO DE ESTADO ENTRE SEEDS
 
 import os
 import json
@@ -177,7 +176,7 @@ class Trainer:
 
             X_train, _, _, _ = self._build_sequences(train_df, fit=True, feature_columns=feature_columns)
             
-            # Proteção robusta contra janelas vazias no treino
+            # Proteção contra janelas vazias no treino
             if X_train is None or len(X_train) == 0:
                 raise ValueError(f"❌ Erro Crítico: Conjunto de TREINO gerou 0 janelas para sequence_length={self.sequence_length}. Operação interrompida!")
 
