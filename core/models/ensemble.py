@@ -31,7 +31,7 @@ class EnsembleModel(BaseModel):
         if not model_names:
             raise ValueError("❌ O modelo 'ensemble' requer uma lista de 'models' no config.yaml.")
 
-        # Garantia de pesos equilibrados caso não definidos
+        # Garantia de pesos equilibrados, caso não definidos
         if not self.weights or len(self.weights) != len(model_names):
             self.weights = [1.0 / len(model_names)] * len(model_names)
 
@@ -40,7 +40,7 @@ class EnsembleModel(BaseModel):
         
         print("\n🤝 [ENSEMBLE] Recrutando Esquadrão (Estrutura Plana)...")
         for name in model_names:
-            # Criamos uma cópia da configuração alterando apenas o tipo para o sub-modelo
+            # Cria uma cópia da configuração com alteração apenas do tipo para o sub-modelo
             sub_config = config.copy()
             sub_config["model"] = config["model"].copy()
             sub_config["model"]["type"] = name
@@ -65,7 +65,7 @@ class EnsembleModel(BaseModel):
             print(f"🏋️ [ENSEMBLE] Treinando sub-modelo {i+1}/{len(self.models)}...")
             model.fit(X_arr)
             
-            # Calibra o scaler do esquadrão usando os scores do treino (baseline de normalidade)
+            # Calibra o scaler do esquadrão com os scores do treino (baseline de normalidade)
             raw_scores = model.score(X_arr)
             self.scalers[i].fit(raw_scores.reshape(-1, 1))
 
@@ -79,7 +79,7 @@ class EnsembleModel(BaseModel):
         for i, model in enumerate(self.models):
             raw_scores = model.score(X_arr)
             
-            # Normalização Robusta: impede que um erro gigante de um modelo
+            # Normalização: impede que um erro grande de um modelo
             # anule a opinião dos outros membros do esquadrão.
             scaled_scores = self.scalers[i].transform(raw_scores.reshape(-1, 1)).flatten()
             
