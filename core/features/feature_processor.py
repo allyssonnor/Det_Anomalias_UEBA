@@ -4,7 +4,7 @@ import logging
 import pickle
 import os
 
-# Versão local do FEATURE_REGISTRY para referência
+
 FEATURE_REGISTRY = {
     "auth_failure": {"required": ["Time", "UserID", "EventID"], "builder": "build_auth_failure"},
     "lateral_movement": {"required": ["Time", "UserID", "LogHost"], "builder": "build_lateral"},
@@ -74,8 +74,7 @@ class FeatureProcessor:
         
         if "ProcessName" in df_temp.columns:
             self.historical_state["process_freq"] = df_temp.groupby(["UserID", "ProcessName"]).size() / user_counts
-
-        # --- NOVOS CODIFICADORES DE TEXTO ---
+        
         if "IpAddress" in df_temp.columns:
             self.historical_state["ip_freq"] = df_temp.groupby(["UserID", "IpAddress"]).size() / user_counts
             
@@ -152,7 +151,7 @@ class FeatureProcessor:
         return df[[c for c in keep if c in df.columns]].fillna(0)
 
     # =========================================================
-    # BUILDERS (ATUALIZADOS COM NOVOS CAMPOS DO WINDOWS)
+    # BUILDERS (ATUALIZADOS)
     # =========================================================
     def build_rdp(self, df):
         """Avalia acessos RDP. Agora aproveita o LogonType (10) se existir."""
