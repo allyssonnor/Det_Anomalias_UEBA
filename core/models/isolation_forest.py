@@ -7,14 +7,13 @@ class IsolationForestModel(BaseModel):
     """
     Isolation Forest wrapper otimizado para detecção de anomalias.
     
-    Integra a configurabilidade da versão original com a 
-    capacidade de processar janelas temporais (3D) do pipeline atual.
+    Tem a capacidade de processar janelas temporais (3D) do workflow atual.
     """
     def __init__(self, config):
         super().__init__(config)
         model_cfg = config.get("model", {}).get("isolation_forest", {})
         
-        # Parâmetros recuperados da versão original para controle total
+        # Parâmetros originais para controle total
         self.n_estimators = model_cfg.get("n_estimators", 200)
         self.max_samples = model_cfg.get("max_samples", "auto")
         self.contamination = model_cfg.get("contamination", "auto")
@@ -38,7 +37,7 @@ class IsolationForestModel(BaseModel):
         X = np.asarray(X)
         
         # INTELIGÊNCIA DE PIPELINE: Isolation Forest espera (n_samples, n_features).
-        # Se os dados forem 3D (janelas), fazemos o flattening automático.
+        # Se os dados forem 3D (janelas), faz o flattening automático.
         if X.ndim == 3:
             X = X.reshape(X.shape[0], -1)
             
