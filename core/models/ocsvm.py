@@ -8,7 +8,7 @@ from core.models.base_model import BaseModel
 class OCSVMModel(BaseModel):
     """
     Wrapper para o algoritmo One-Class SVM.
-    Adaptado para aceitar a estrutura de tensores 3D achatando-os em 2D.
+    Adaptado para aceitar a estrutura de tensores 3D com achatamento em 2D.
     """
 
     def __init__(self, config):
