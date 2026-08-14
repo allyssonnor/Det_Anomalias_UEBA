@@ -1,125 +1,136 @@
-import os
-import glob
-import argparse
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.metrics import (
-    confusion_matrix,
-    roc_curve,
-    auc,
-    precision_recall_curve,
-    average_precision_score,
-    f1_score,
-    recall_score,
-    precision_score
-)
+import argparse
+import os
+from math import pi
 
-def find_latest_experiment(base_dir):
-    """Busca recursivamente o CSV de predições, ignorando tabelas mestres."""
-    csv_candidates = glob.glob(os.path.join(base_dir, "**", "*pred*.csv"), recursive=True)
-    if not csv_candidates:
-        csv_candidates = glob.glob(os.path.join(base_dir, "**", "*eval*.csv"), recursive=True)
-    if not csv_candidates:
-        all_csvs = glob.glob(os.path.join(base_dir, "**", "*.csv"), recursive=True)
-        # Filtra e ignora a tabela geral de resultados e gabaritos
-        csv_candidates = [f for f in all_csvs if "master_results_table" not in f and "labels" not in f]
-        
-    if not csv_candidates:
-        raise FileNotFoundError(f"Nenhum arquivo CSV de predições encontrado em: {base_dir}")
+def plot_master_dashboard(csv_path, output_path="results/dashboard_arquitetura.png"):
+    # 1. Carregar os dados
+    df = pd.read_csv(csv_path)
     
-    return max(csv_candidates, key=os.path.getmtime)
+    # Tratamento básico de nomes de colunas caso haja variação
+    if 'model.sequence_length' not in df.columns and 'sequence_length' in df.columns:
+        df.rename(columns={'sequence_length': 'model.sequence_length'}, inplace=True)
+    if 'training.threshold_mode' not in df.columns and 'threshold_mode' in df.columns:
+        df.rename(columns={'threshold_mode': 'training.threshold_mode'}, inplace=True)
 
-def load_data(file_path):
-    df = pd.read_csv(file_path)
-    
-    y_true_col = next((c for c in ['y_true', 'label', 'labels', 'target', 'is_anomaly', 'Is_Anomaly'] if c in df.columns), None)
-    y_pred_col = next((c for c in ['y_pred', 'prediction', 'pred', 'pred_label'] if c in df.columns), None)
-    y_score_col = next((c for c in ['y_score', 'anomaly_score', 'reconstruction_error', 'loss', 'score'] if c in df.columns), None)
-
-    if not y_true_col:
-        raise ValueError(f"Coluna de rótulos reais não encontrada no CSV. Colunas disponíveis: {list(df.columns)}")
-
-    y_true = df[y_true_col].values.astype(int)
-    
-    if y_pred_col:
-        y_pred = df[y_pred_col].values.astype(int)
-    elif y_score_col:
-        threshold = np.percentile(df[y_score_col], 95)
-        y_pred = (df[y_score_col].values > threshold).astype(int)
-    else:
-        y_pred = y_true
-
-    y_score = df[y_score_col].values if y_score_col else y_pred.astype(float)
-    return y_true, y_pred, y_score, df
-
-def plot_dashboard(y_true, y_pred, y_score, output_path="results/dashboard_banca.png"):
+    # Configuração visual geral
     plt.style.use('seaborn-v0_8-whitegrid' if 'seaborn-v0_8-whitegrid' in plt.style.available else 'default')
-    fig, axes = plt.subplots(2, 2, figsize=(14, 11))
-    fig.suptitle('Avaliação de Desempenho - Detecção de Anomalias (UEBA)', fontsize=16, fontweight='bold', y=0.98)
+    fig = plt.figure(figsize=(16, 12))
+    fig.suptitle('Análise Arquitetural e Trade-offs do Modelo (UEBA)', fontsize=18, fontweight='bold', y=0.98)
 
-    # 1. Matriz de Confusão
-    cm = confusion_matrix(y_true, y_pred)
-    cm_norm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis] * 100
-    labels = ['Normal', 'Anomalia']
-    annot = np.array([f"{count}\n({pct:.1f}%)" for count, pct in zip(cm.flatten(), cm_norm.flatten())]).reshape(2, 2)
-    sns.heatmap(cm_norm, annot=annot, fmt='', cmap='Blues', cbar=False, ax=axes[0, 0],
-                xticklabels=labels, yticklabels=labels, annot_kws={"size": 12, "weight": "bold"})
-    axes[0, 0].set_title('Matriz de Confusão (Normalizada / Total)', fontsize=13, fontweight='bold')
-    axes[0, 0].set_xlabel('Predição do Modelo', fontsize=11)
-    axes[0, 0].set_ylabel('Rótulo Real', fontsize=11)
+    # Cores
+    cores = {'F1': '#1f77b4', 'Recall': '#2ca02c', 'Precision': '#ff7f0e', 'Time': '#d62728'}
 
-    # 2. Curva ROC
-    fpr, tpr, _ = roc_curve(y_true, y_score)
-    roc_auc_val = auc(fpr, tpr)
-    axes[0, 1].plot(fpr, tpr, color='#1f77b4', lw=2.5, label=f'ROC AUC = {roc_auc_val:.4f}')
-    axes[0, 1].plot([0, 1], [0, 1], color='gray', linestyle='--', lw=1.5, label='Aleatório')
-    axes[0, 1].set_title('Curva ROC', fontsize=13, fontweight='bold')
-    axes[0, 1].set_xlabel('Taxa de Falsos Positivos (FPR)', fontsize=11)
-    axes[0, 1].set_ylabel('Taxa de Verdadeiros Positivos (TPR / Recall)', fontsize=11)
-    axes[0, 1].legend(loc='lower right', frameon=True, fontsize=11)
-    axes[0, 1].grid(True, linestyle=':', alpha=0.6)
+    # =========================================================================
+    # 1. Gráfico de Barras: Impacto da Sequência (ax1)
+    # =========================================================================
+    ax1 = fig.add_subplot(221)
+    df_seq = df.groupby('model.sequence_length')[['f1_score', 'recall', 'precision']].mean().reset_index()
+    df_seq_melt = df_seq.melt(id_vars='model.sequence_length', var_name='Métrica', value_name='Score')
+    
+    sns.barplot(data=df_seq_melt, x='model.sequence_length', y='Score', hue='Métrica', 
+                palette=[cores['F1'], cores['Recall'], cores['Precision']], ax=ax1)
+    
+    ax1.set_title('1. Impacto do Contexto Temporal (Seq. Length)', fontsize=14, fontweight='bold')
+    ax1.set_xlabel('Tamanho da Sequência (Eventos)', fontsize=12)
+    ax1.set_ylabel('Score Médio', fontsize=12)
+    ax1.set_ylim(0, 1.1)
+    ax1.legend(title='', loc='upper left')
 
-    # 3. Curva PR
-    prec, rec, _ = precision_recall_curve(y_true, y_score)
-    pr_auc_val = average_precision_score(y_true, y_score)
-    axes[1, 0].plot(rec, prec, color='#2ca02c', lw=2.5, label=f'PR-AUC (AP) = {pr_auc_val:.4f}')
-    axes[1, 0].set_title('Curva Precision-Recall', fontsize=13, fontweight='bold')
-    axes[1, 0].set_xlabel('Recall', fontsize=11)
-    axes[1, 0].set_ylabel('Precision', fontsize=11)
-    axes[1, 0].legend(loc='lower left', frameon=True, fontsize=11)
-    axes[1, 0].grid(True, linestyle=':', alpha=0.6)
+    # =========================================================================
+    # 2. Eixo Duplo: Desempenho vs Custo Computacional (ax2)
+    # =========================================================================
+    ax2 = fig.add_subplot(222)
+    df_cost = df.groupby('model.sequence_length')[['f1_score', 'elapsed_sec']].mean().reset_index()
+    
+    # Barra para F1 (Eixo Esquerdo)
+    x_pos = np.arange(len(df_cost['model.sequence_length']))
+    ax2.bar(x_pos, df_cost['f1_score'], color=cores['F1'], width=0.4, label='F1-Score', alpha=0.8)
+    ax2.set_ylabel('Desempenho (F1-Score)', fontsize=12, color=cores['F1'], fontweight='bold')
+    ax2.tick_params(axis='y', labelcolor=cores['F1'])
+    ax2.set_xticks(x_pos)
+    ax2.set_xticklabels(df_cost['model.sequence_length'])
+    ax2.set_xlabel('Tamanho da Sequência (Eventos)', fontsize=12)
+    
+    # Linha para Tempo (Eixo Direito)
+    ax2_twin = ax2.twinx()
+    ax2_twin.plot(x_pos, df_cost['elapsed_sec'], color=cores['Time'], marker='o', linewidth=2, markersize=8, label='Tempo')
+    ax2_twin.set_ylabel('Tempo de Execução (segundos)', fontsize=12, color=cores['Time'], fontweight='bold')
+    ax2_twin.tick_params(axis='y', labelcolor=cores['Time'])
+    
+    # AJUSTE FINO: Zoom dinâmico no eixo Y do tempo para destacar a inclinação
+    t_min = df_cost['elapsed_sec'].min()
+    t_max = df_cost['elapsed_sec'].max()
+    t_pad = (t_max - t_min) * 0.3 if t_max > t_min else 0.5
+    ax2_twin.set_ylim(max(0, t_min - t_pad), t_max + t_pad)
+    
+    ax2.set_title('2. Trade-off: Desempenho vs. Custo', fontsize=14, fontweight='bold')
+    # Ajustar legendas combinadas
+    lines_1, labels_1 = ax2.get_legend_handles_labels()
+    lines_2, labels_2 = ax2_twin.get_legend_handles_labels()
+    ax2.legend(lines_1 + lines_2, labels_1 + labels_2, loc='upper left')
 
-    # 4. Distribuição dos Scores
-    sns.kdeplot(y_score[y_true == 0], ax=axes[1, 1], color='#1f77b4', fill=True, alpha=0.4, label='Normal')
-    sns.kdeplot(y_score[y_true == 1], ax=axes[1, 1], color='#d62728', fill=True, alpha=0.4, label='Anomalia')
-    axes[1, 1].set_title('Distribuição dos Scores de Anomalia', fontsize=13, fontweight='bold')
-    axes[1, 1].set_xlabel('Score / Erro de Reconstrução', fontsize=11)
-    axes[1, 1].set_ylabel('Densidade', fontsize=11)
-    axes[1, 1].legend(loc='upper right', frameon=True, fontsize=11)
-    axes[1, 1].grid(True, linestyle=':', alpha=0.6)
+    # =========================================================================
+    # 3. Gráfico de Radar: Perfil do Melhor Modelo (ax3)
+    # =========================================================================
+    ax3 = fig.add_subplot(223, polar=True)
+    
+    # Pegar o melhor modelo baseado no F1-Score
+    best_row = df.loc[df['f1_score'].idxmax()]
+    categorias = ['Precision', 'Recall', 'F1-Score', 'PR-AUC']
+    valores = [best_row['precision'], best_row['recall'], best_row['f1_score'], best_row['pr_auc']]
+    
+    # Fechar o ciclo do radar
+    valores += [valores[0]]
+    angulos = [n / float(len(categorias)) * 2 * pi for n in range(len(categorias))]
+    angulos += [angulos[0]]
+    
+    ax3.plot(angulos, valores, color='#8c564b', linewidth=2, linestyle='solid')
+    ax3.fill(angulos, valores, color='#8c564b', alpha=0.25)
+    
+    ax3.set_xticks(angulos[:-1])
+    ax3.set_xticklabels(categorias, fontsize=11, fontweight='bold')
+    ax3.set_yticks([0.2, 0.4, 0.6, 0.8, 1.0])
+    ax3.set_yticklabels(['0.2', '0.4', '0.6', '0.8', '1.0'], color="grey", size=9)
+    ax3.set_ylim(0, 1)
+    
+    titulo_radar = f"3. Perfil do Melhor Modelo\n(Seq={best_row['model.sequence_length']} | {best_row['training.threshold_mode']})"
+    ax3.set_title(titulo_radar, fontsize=14, fontweight='bold', pad=20)
 
-    p = precision_score(y_true, y_pred, zero_division=0)
-    r = recall_score(y_true, y_pred, zero_division=0)
-    f1 = f1_score(y_true, y_pred, zero_division=0)
-    metrics_text = f"Precision: {p:.3f} | Recall: {r:.3f} | F1-Score: {f1:.3f} | ROC-AUC: {roc_auc_val:.3f}"
-    fig.text(0.5, 0.02, metrics_text, ha='center', fontsize=12,
-             bbox=dict(boxstyle='round,pad=0.6', facecolor='#f0f0f0', edgecolor='#cccccc', lw=1.5))
+    # =========================================================================
+    # 4. Barras Agrupadas: Global vs Per User em Seq=20 (ax4)
+    # =========================================================================
+    ax4 = fig.add_subplot(224)
+    df_20 = df[df['model.sequence_length'] == 20]
+    
+    if not df_20.empty:
+        df_thresh = df_20.groupby('training.threshold_mode')[['f1_score', 'pr_auc']].mean().reset_index()
+        df_thresh_melt = df_thresh.melt(id_vars='training.threshold_mode', var_name='Métrica', value_name='Score')
+        
+        sns.barplot(data=df_thresh_melt, x='training.threshold_mode', y='Score', hue='Métrica', 
+                    palette=['#9467bd', '#17becf'], ax=ax4)
+        
+        ax4.set_title('4. Estratégia de Limiar (Apenas Seq=20)', fontsize=14, fontweight='bold')
+        ax4.set_xlabel('Modo de Threshold', fontsize=12)
+        ax4.set_ylabel('Score Médio', fontsize=12)
+        ax4.set_ylim(0, max(df_thresh_melt['Score'].max() * 1.2, 0.8))
+        ax4.legend(title='', loc='upper right')
+    else:
+        ax4.text(0.5, 0.5, 'Sem dados para Seq=20', ha='center', va='center', fontsize=12)
 
-    plt.tight_layout(rect=[0, 0.04, 1, 0.96])
+    # Ajustes finais e salvar
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
     plt.savefig(output_path, dpi=300)
-    plt.show()
-    print(f"\n✅ Painel de gráficos gerado com sucesso: {output_path}")
+    print(f"✅ Dashboard gerado com sucesso: {output_path}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--results_dir", type=str, default="results/LAST_RUN")
-    parser.add_argument("--csv_file", type=str, default=None)
+    parser = argparse.ArgumentParser(description="Plota dashboard arquitetural baseado no master_results_table.")
+    parser.add_argument("--csv", type=str, required=True, help="Caminho para o master_results_table.csv")
+    parser.add_argument("--save_path", type=str, default="results/dashboard_arquitetura.png")
     args = parser.parse_args()
 
-    csv_target = args.csv_file if args.csv_file else find_latest_experiment(args.results_dir)
-    print(f"📊 Processando resultados de: {csv_target}")
-    y_true, y_pred, y_score, _ = load_data(csv_target)
-    plot_dashboard(y_true, y_pred, y_score)
+    plot_master_dashboard(args.csv, output_path=args.save_path)
