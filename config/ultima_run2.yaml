@@ -1,21 +1,11 @@
 # ==============================================================================
-# PLANO ESTRUTURADO DE EXPERIMENTOS CONSOLIDADO - MARATONA DE TESE (CAP 4 e 5)
+# PLANO ESTRUTURADO DE DETECÇÃO ISOLADA
 # ==============================================================================
 
 # ==============================================================================
 # 1. MATRIZ DE DATASETS
 # ==============================================================================
 datasets:
-# - name: "CERT"
-#   overrides:
-#     data.train_path: "/content/drive/MyDrive/Project_Detector/data/CERT/train"
-#     data.val_path: "/content/drive/MyDrive/Project_Detector/data/CERT/val"
-#     data.test_path: "/content/drive/MyDrive/Project_Detector/data/CERT/test"
-#     data.val_label_path: "/content/drive/MyDrive/Project_Detector/data/CERT/val/labels.csv"
-#     data.test_label_path: "/content/drive/MyDrive/Project_Detector/data/CERT/test/labels.csv"
-#     data.target_col: "Is_Anomaly"
-#     data.label_filename: "labels.csv"
-
   - name: "Synthetic"
     overrides:
       data.train_path: "/content/drive/MyDrive/Project_Detector/data/synthetic/train/train.jsonl"
@@ -24,113 +14,40 @@ datasets:
       data.isolated_tests_dir: "/content/drive/MyDrive/Project_Detector/data/synthetic2"
       data.target_col: "Is_Anomaly"
       data.label_filename: "labels.csv"
-
-# - name: "LANL"
-#   overrides:
-#     data.train_path: "/content/drive/MyDrive/Project_Detector/data/lanl/train"
-#     data.val_path: "/content/drive/MyDrive/Project_Detector/data/lanl/val"
-#     data.test_path: "/content/drive/MyDrive/Project_Detector/data/lanl/test"
-#     data.val_label_path: "/content/drive/MyDrive/Project_Detector/data/lanl/val/labels.csv"
-#     data.test_label_path: "/content/drive/MyDrive/Project_Detector/data/lanl/test/labels.csv"
-#     data.target_col: "Is_Anomaly"
-#     data.label_filename: "gabarito.csv"
-
 # ==============================================================================
-# 2. CONFIGURAÇÕES DE MODELOS (PRESETS PARA O RUNNER)
+# 2. CONFIGURAÇÕES DO MODELO 
 # ==============================================================================
 
-# LISTA COM OS MODELOS DISPONÍVEIS E REGISTRADOS NA FACTORY
 model_presets:
-#   - name: "Autoencoder GPU"
-#     overrides:
-#       model.type: "autoencoder"
-#       training.batch_size: 64
-#       model.autoencoder:
-#         layers: [64, 32, 16]
-#         dropout: 0.1
-
-#   - name: "Ensemble GPU"
-#     overrides:
-#       model.type: "ensemble"
-#       training.batch_size: 64
-#       model.ensemble:
-#         models: ["mlp_autoencoder", "lstm_autoencoder", "isolation_forest"]
-#         weights: [0.3, 0.4, 0.3]
-
-#   - name: "Isolation Forest CPU"
-#     overrides:
-#       model.type: "isolation_forest"
-#       model.isolation_forest:
-#         n_estimators: 200
-#         contamination: "auto"
-#         max_features: 1.0
-
-#   - name: "LOF CPU"
-#     overrides:
-#       model.type: "lof"
-#       model.lof:
-#        n_neighbors: 20
-#        contamination: 0.1
-
-#   - name: "LSTM GPU"
-#     overrides:
-#       model.type: "lstm_autoencoder"
-#       training.batch_size: 64
-
-   - name: "MLP_Autoencoder GPU"
-     overrides:
-       model.type: "mlp_autoencoder"
-       model.mlp_autoencoder.latent_dim: 8
-       model.mlp_autoencoder.dense_units: [64, 32]
-       model.mlp_autoencoder.dropout: 0.1
-       model.mlp_autoencoder.use_batch_norm: true
-       training.batch_size: 8
-
-
 #  - name: "MLP_Single CPU"
 #    overrides:
 #      model.type: "mlp_single"
 #      training.batch_size: 64
 #      model.mlp_single:
 #        hidden_layer_sizes: [32]
-#        max_iter: 200
-
-#   - name: "OCSVM CPU"
-#     overrides:
-#       model.type: "ocsvm"
-#       model.ocsvm:
-#         nu: 0.05
+#        max_iter: 50
 
 # ==============================================================================
 # 3. GRID DE HIPERPARÂMETROS (A PROVA DA TESE)
 # ==============================================================================
 hyperparameter_grid:
-  # O Runner vai rodar cada dataset e modelo duas vezes: 
-  # Uma com estatística global e outra com UEBA per_user
+  # Vai rodar o dataset e modelo duas vezes: 
+  # uma com estatística global e outra com UEBA per_user
   training.threshold_mode: ["global", "per_user"]
-
-# training.threshold_mode: ["global"]
-# training.threshold_mode: ["per user"]
-
-# Testar se contexto de 10 vs 15 eventos impacta a detecção
-#  model.sequence_length: [15, 20]
-  model.sequence_length: [5]
+  model.sequence_length: [20]
   training.epochs: [20]
-
 # ==============================================================================
 # 4. CONFIGURAÇÕES DO EXECUTOR / SETTINGS DO RUNNER
 # ==============================================================================
 settings:
-  results_root: "results/LAST_RUN"
+  results_root: "results/colab_cpu_runs/ISOLATED"
   generate_plots: true
   save_checkpoints: true
   seeds: [42]
-#  seeds: [42, 123, 999]
 
 # ==============================================================================
 # 5. CONFIGURAÇÃO BASE 
 # ==============================================================================
-
 # --- CAMADA DE DADOS (DATA LAYER) ---
 data:
   train_path: "data/synthetic/train/train.jsonl"
@@ -151,36 +68,12 @@ data:
 
 # --- CAMADA DO MODELO (MODEL LAYER) ---
 model:
-  # O tipo de detetor invocado por padrão.
-  type: "mlp_autoencoder"
+  # O tipo de detector usado por padrão.
+  type: "mlp_single"
 
   # Quantidade de eventos passados observados numa janela temporal (Memória de curto prazo).
-  sequence_length: 15
-
-  # Configuração do Esquadrão (Votação ponderada)
-  ensemble:
-    models: ["mlp_autoencoder", "lstm_autoencoder", "isolation_forest"]
-    weights: [0.3, 0.4, 0.3] # Peso de cada modelo na decisão final.
-
-  # Configuração do Especialista Temporal (LSTM)
-  lstm_autoencoder:
-    latent_dim: 32 # Suporta a complexidade do modo full
-    lstm_units: [64, 32] # Arquitetura mais profunda para reter padrões de longo prazo
-    dropout: 0.1 # Prevenção de overfitting
-
-  # Configuração do Especialista de Reconstrução Global (MLP)
-  mlp_autoencoder:
-    latent_dim: 16 # Gargalo de compressão
-    dense_units: [128, 64] # Arquitetura padrão de deep learning tabular
-    dropout: 0.1
-    use_batch_norm: true # Estabiliza gradientes em datasets volumosos
-
-  # Configuração do Especialista Estatístico de Baseline (IF)
-  isolation_forest:
-    n_estimators: 200 # Melhor consenso em grandes volumes
-    contamination: "auto"
-    random_state: 42
-
+  sequence_length: 20
+  
 # --- CAMADA DE TREINAMENTO E RESILIÊNCIA (TRAINING LAYER) ---
 training:
   batch_size: 256
@@ -199,11 +92,11 @@ training:
   save_model: true
   
 # [NOVO] Fixação Manual de Limiares (Opcional)
-# Descomente (remova o '#') de UMA das opções abaixo se não quiser usar a busca automática pelo melhor F2-Score:
-  fixed_percentile: 98.5    # Corta fixo nos N% mais anômalos (respeita o modo per_user ou global).
+# Descomentar (remover o '#') de UMA das opções abaixo se não quiser usar a busca automática pelo melhor F2-Score:
+#  fixed_percentile: 98.5    # Corta fixo nos N% mais anômalos (respeita o modo per_user ou global).
 # fixed_threshold: 0.90      # Corte absoluto: valor exato da anomalia (ignora percentis e o modo per_user).
 
-  # Estratégia de Calibração do Detector
+  # Estratégia de Calibragem do Detector
   # "per_user": UEBA Clássico. Cada utilizador tem o seu próprio limiar dinâmico.
   # "global":   Estatística Tradicional. Um único limiar para todo o parque.
   threshold_mode: ["global", "per_user"]
@@ -241,4 +134,4 @@ features:
     - "privilege_anomaly"
 
 # --- DIRETÓRIO DE SAÍDA ---
-output_dir: "results/LAST_RUN_FINAL/full/isolated/MLP_ON_ROIDS"
+output_dir: "results/LAST_RUN_FINAL/full/isolated/MLP_SINGLE"
