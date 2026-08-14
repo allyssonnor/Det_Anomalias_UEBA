@@ -10,7 +10,7 @@ class LOFModel(BaseModel):
     """
     Wrapper do Local Outlier Factor (LOF) adaptado para o ecossistema do projeto.
     Dá suporte a inferência em dados novos (test set) através de novelty=True
-    e suporta o pipeline temporal 3D realizando achatamento dimensional.
+    e suporta o workflow temporal 3D com realização de achatamento dimensional.
     """
 
     def __init__(self, config):
@@ -49,7 +49,7 @@ class LOFModel(BaseModel):
             p=self.p,
             n_jobs=self.n_jobs,
             contamination=self.contamination,
-            novelty=True  # Habilita a predição/escoragem de dados fora da amostra original de treino
+            novelty=True  # Habilita a predição de dados fora da amostra original de treino
         )
 
         self.model.fit(X)
@@ -71,7 +71,7 @@ class LOFModel(BaseModel):
         # O decision_function do Scikit-Learn retorna valores negativos onde quanto menor, mais anômalo
         scores = self.model.decision_function(X)
 
-        # Inverte o sinal seguindo o contrato BaseModel (maior valor = mais anômalo)
+        # Inverte o sinal e segue o contrato BaseModel (maior valor = mais anômalo)
         scores = self._ensure_higher_is_anomaly(scores, invert=True)
 
         return scores
