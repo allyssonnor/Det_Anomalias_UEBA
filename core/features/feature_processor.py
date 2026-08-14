@@ -62,7 +62,7 @@ class FeatureProcessor:
         if df is None or df.empty: 
             return
         
-        print("🧠 [FeatureProcessor] A memorizar parâmetros históricos e codificadores...")
+        print("🧠 [FeatureProcessor] A processar os parâmetros históricos e codificadores...")
         df_temp = df.copy()
         df_temp["datetime"] = pd.to_datetime(df_temp["Time"], unit="s")
         
