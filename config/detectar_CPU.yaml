@@ -96,7 +96,7 @@ settings:
   # Sementes completas para reprodutibilidade e cálculo de intervalo de confiança
   seeds: [42, 123, 999]
 
-  generate_plots: true
+#  generate_plots: true
   save_checkpoints: true
 
 # ==============================================================================
