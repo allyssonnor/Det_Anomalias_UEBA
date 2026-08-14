@@ -11,8 +11,8 @@ from core.models.base_model import BaseModel
 class MLPAutoencoder(BaseModel):
     """
     Autoencoder MLP otimizado. 
-    Inclui BatchNormalization e Gradient Clipping extraídos do script funcional.
-    Agora herda de BaseModel e utiliza a interface padronizada de score.
+    Inclui BatchNormalization e Gradient Clipping.
+    Herda de BaseModel e utiliza a interface padronizada de score.
     """
     def __init__(self, config):
         super().__init__(config)
