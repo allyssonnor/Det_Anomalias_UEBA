@@ -1,0 +1,37 @@
+# 1. Garante que está no diretório correto e atualiza o repo
+%cd /content
+![ -d "Det_Anomalias_UEBA" ] || git clone https://github.com/allyssonnor/Det_Anomalias_UEBA.git
+%cd /content/Det_Anomalias_UEBA
+
+# 2. Baixa e extrai o dataset se ainda não existir
+![ -f "data.zip" ] || wget -O data.zip "https://github.com/allyssonnor/Det_Anomalias_UEBA/releases/download/Data/data.zip"
+!unzip -q -n data.zip -d data/
+!mv data/data/* data/ 2>/dev/null || true
+!rm -rf data/data
+
+# 3. ATALHOS CRUCIAIS:
+# Mapeia Project_Detector para Det_Anomalias_UEBA
+!mkdir -p /content/drive/MyDrive
+!ln -sfn /content/Det_Anomalias_UEBA /content/Project_Detector
+!ln -sfn /content/Det_Anomalias_UEBA /content/drive/MyDrive/Project_Detector
+
+# Mapeia synthetic2 na raiz de data (resolve o erro do run_thesis_isolated_eval.py)
+!ln -sfn /content/Det_Anomalias_UEBA/data/output_thesis_marathon/synthetic2 /content/Det_Anomalias_UEBA/data/synthetic2
+!ln -sfn /content/Det_Anomalias_UEBA/data/output_thesis_marathon/synthetic /content/Det_Anomalias_UEBA/data/synthetic
+
+# 4. Executa a maratona/detecção
+!python scripts/detectar.py --exp_config config/detectar_CPU.yaml
+
+# 5. Executa a avaliação isolada
+!python scripts/run_thesis_isolated_eval.py
+
+# 6. Executa o extract_anomalies apontando para o modelo e teste
+!python scripts/extract_anomalies.py \
+  --output_dir /content/Project_Detector/results/colab_cpu_runs/full/marathon_seed42/Synthetic_MLP_Single_CPU_threshold_modeper_user_seq_len20_max_iter50/eval_mixed \
+  --test_csv data/output_thesis_marathon/synthetic/test/test.jsonl
+
+# 7. Executa o script de plot apontando para o CSV correto com predições (evitando o master_results_table.csv)
+
+%run scripts/plotar4 --csv results/colab_cpu_runs/full/marathon_seed42/master_results_table.csv
+from IPython.display import Image, display
+display(Image("results/dashboard_arquitetura.png"))
