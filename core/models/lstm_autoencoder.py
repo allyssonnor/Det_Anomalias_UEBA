@@ -7,7 +7,7 @@ from core.models.base_model import BaseModel
 
 class LSTMAutoencoder(BaseModel):
     """
-    Autoencoder usando redes recorrentes LSTM.
+    Autoencoder que usa redes recorrentes LSTM.
     HERANÇA E CONTRATO DEFINITIVOS (Compatível com GPUs genéricas/Apple Silicon).
     """
     def __init__(self, config):
