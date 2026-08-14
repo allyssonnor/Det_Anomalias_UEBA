@@ -53,7 +53,7 @@ class BaseModel(ABC):
         pass
 
     # =====================================================
-    # PREDICT (PADRONIZAÇÃO CRÍTICA 1.1)
+    # PREDICT (PADRONIZAÇÃO)
     # =====================================================
 
     def predict(self, X: np.ndarray) -> np.ndarray:
