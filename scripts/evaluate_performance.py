@@ -1,11 +1,11 @@
 # scripts/evaluate_performance.py
-# VERSÃO CORRIGIDA - PROTEÇÃO CONTRA CHAVES EM FLOAT ("1.0") NO JSON
+# VERSÃO COM CÁLCULO DE ROC-AUC INTEGRADO
 
 import os
 import json
 import numpy as np
 import pandas as pd
-from sklearn.metrics import classification_report, precision_recall_curve, auc
+from sklearn.metrics import classification_report, precision_recall_curve, auc, roc_auc_score
 import matplotlib.pyplot as plt
 from numpy.lib.stride_tricks import sliding_window_view
 
@@ -122,7 +122,15 @@ def run_external_evaluation(config, test_df=None):
 
     precision_curve, recall_curve, _ = precision_recall_curve(y_test, scores)
     pr_auc = auc(recall_curve, precision_curve)
-    print(f"🎯 PR-AUC Global Alcançado: {pr_auc:.4f}")
+    
+    # --- NOVO CÁLCULO ROC-AUC ---
+    try:
+        roc_auc = roc_auc_score(y_test, scores)
+    except ValueError:
+        roc_auc = 0.5 # Fallback caso haja apenas uma classe na amostra
+
+    print(f"🎯 PR-AUC Global Alcançado : {pr_auc:.4f}")
+    print(f"🎯 ROC-AUC Global Alcançado: {roc_auc:.4f}")
 
     print("\nRelatório de Classificação (Performance de Produção Per-User):")
     print(report_text)
@@ -132,7 +140,8 @@ def run_external_evaluation(config, test_df=None):
     with open(report_file_path, "w") as f:
         f.write("=== AVALIAÇÃO EXTERNA DE SEGURANÇA ===\n")
         f.write(f"Data/Hora: {pd.Timestamp.now().isoformat()}\n")
-        f.write(f"PR-AUC: {pr_auc:.6f}\n\n")
+        f.write(f"PR-AUC: {pr_auc:.6f}\n")
+        f.write(f"ROC-AUC: {roc_auc:.6f}\n\n")
         f.write(report_text)
 
     # Coleta de forma resiliente os dados da classe positiva, prevenindo chaves alternativas
@@ -141,6 +150,7 @@ def run_external_evaluation(config, test_df=None):
     # Salva o relatório estruturado em JSON para leitura rápida do Runner
     summary_metrics = {
         "pr_auc": float(pr_auc),
+        "roc_auc": float(roc_auc),
         "f1_score": float(class_1_data.get("f1-score", 0.0)),
         "precision": float(class_1_data.get("precision", 0.0)),
         "recall": float(class_1_data.get("recall", 0.0))
