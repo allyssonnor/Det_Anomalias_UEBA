@@ -94,10 +94,10 @@ def main():
         test_df = test_df.sort_values(["UserID", "Time"]).reset_index(drop=True)
 
     # ---------------------------------------------------------
-    # 3. CARREGAMENTO DOS ARTEFATOS
+    # 3. CARREGAMENTO DOS ARTEFATOS (CORRIGIDO PARA OS NOVOS NOMES)
     # ---------------------------------------------------------
-    scores_path = os.path.join(args.output_dir, "test_scores.npy")
-    indices_path = os.path.join(args.output_dir, "test_indices.npy")
+    scores_path = os.path.join(args.output_dir, "scores.npy")
+    indices_path = os.path.join(args.output_dir, "indices.npy")
     thresholds_path = os.path.join(args.output_dir, "user_thresholds.json")
 
     if not (os.path.exists(scores_path) and os.path.exists(indices_path)):
