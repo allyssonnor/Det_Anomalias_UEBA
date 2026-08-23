@@ -1,0 +1,64 @@
+# ==============================================================================
+# CONFIGURAÇÃO: ESPECIALISTA SUPERVISIONADO EM FORÇA BRUTA (BRUTEFORCE)
+# ==============================================================================
+
+data:
+  train_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/synthetic/train"
+  val_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/synthetic/val"
+  test_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/synthetic/test"
+  isolated_tests_dir: "/content/drive/MyDrive/Project_Detector/data/synthetic2"
+  target_col: "Is_Anomaly"
+  time_nan_strategy: "nan"
+
+datasets:
+  - name: "Synthetic"
+    overrides: {}
+
+settings:
+  results_root: "/content/drive/MyDrive/Project_Detector/results/banca_runs"
+  seeds: [42]
+  run_isolated_eval: true
+  isolated_targets: ["test_bruteforce"]    # Executa apenas a auditoria de força bruta
+
+sampling:
+  mode: "full"
+  train_size: 5000
+  val_size: 1000
+  test_size: 1000
+
+features:
+  enabled: true
+  enabled_groups:
+    - "auth_failure"
+    - "volume_anomaly"
+    - "temporal_anomaly"
+
+model_presets:
+  - name: "MLP_Bruteforce_Supervised"
+    overrides:
+      model.type: "mlp_supervised"
+      model.mlp_supervised:
+        hidden_layer_sizes: [32]
+        max_iter: 50
+        activation: "relu"
+        solver: "adam"
+
+hyperparameter_grid:
+  training.threshold_mode: ["per_user"]
+  model.sequence_length: [20]
+
+training:
+  resume: true
+  supervised: true
+  target_attack_type: "bruteforce"
+  fixed_threshold: 0.5                  # Limiar absoluto de probabilidade para classificador
+  batch_size: 64
+  epochs: 50
+  learning_rate: 0.001
+  validation_split: 0.1
+  early_stopping_patience: 10
+  save_model: true
+
+temporal:
+  session_timeout: 1800
+  min_events_session: 2
