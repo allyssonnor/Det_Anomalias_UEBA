@@ -147,7 +147,7 @@ class FeatureProcessor:
                 pickle.dump({"features": self.final_feature_names, "state": self.historical_state}, f)
 
         print(f"📊 Vetor Final ({len(df)} eventos): {len(self.final_feature_names)} dimensões isoladas.")
-        keep = self.final_feature_names + ["UserID", "Time", "Is_Anomaly"]
+        keep = self.final_feature_names + ["UserID", "Time", "Is_Anomaly", "AnomalyType"]
         return df[[c for c in keep if c in df.columns]].fillna(0)
 
     # =========================================================
