@@ -81,7 +81,7 @@ hyperparameter_grid:
 
   # Tamanho da janela temporal (quantos eventos passados o modelo enxerga)
   # Fixado em 20 para os melhores modelos de deep learning
-  model.sequence_length: [10, 20]
+  model.sequence_length: [10]
 
   # Número de épocas máximo parametrizado uniformemente para a maratona
   training.epochs: [50]
@@ -94,7 +94,7 @@ settings:
   results_root: "/content/drive/MyDrive/Project_Detector/results/colab_cpu_runs"
 
   # Sementes completas para reprodutibilidade e cálculo de intervalo de confiança
-  seeds: [42, 123, 999]
+  seeds: [42]
 
 #  generate_plots: true
   save_checkpoints: true
@@ -139,7 +139,7 @@ training:
 
 # --- CAMADA DE AMOSTRAGEM (DEBUG vs FULL) ---
 sampling:
-  mode: "full"        # "full" para rodar com o conjunto de dados completo na GPU T4
+  mode: "debug"        # "full" para rodar com o conjunto de dados completo na GPU T4
   train_size: 5000
   val_size: 1000
   test_size: 1000
