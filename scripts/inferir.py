@@ -123,10 +123,23 @@ def rodar_inferencia(config_path, dataset_novo_path):
     if hasattr(model, "eval"):
         model.eval()
 
+    # =====================================================================
     # 5. Processamento Limpo do Dataset de Inferência (Zero Vazamento)
+    # =====================================================================
     config_infer = copy.deepcopy(config)
-    config_infer["data"]["test_path"] = dataset_novo_path
     
+    # ---------------------------------------------------------------------
+    # CORREÇÃO CIRÚRGICA: Força o caminho passado via --data (--data) a 
+    # sobrescrever qualquer rota antiga que estivesse salva no config_used.yaml
+    # ---------------------------------------------------------------------
+    if "data" not in config_infer:
+        config_infer["data"] = {}
+    
+    config_infer["data"]["test_path"] = dataset_novo_path
+    config_infer["data"]["train_path"] = dataset_novo_path # Garante que o adapter não quebre buscando treino vazio
+    config_infer["data"]["val_path"] = dataset_novo_path   # Garante que o adapter não quebre buscando validação vazia
+    
+    print(f"🎯 Forçando leitura do novo dataset alvo: {dataset_novo_path}")
     adapter = DatasetAdapter(config_infer)
     _, _, test_raw = adapter.load()
 
