@@ -1,12 +1,13 @@
+
 # ==============================================================================
 # CONFIGURAÇÃO: ESPECIALISTA SUPERVISIONADO EM FORÇA BRUTA (BRUTEFORCE)
 # ==============================================================================
 
 data:
-  train_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/synthetic/train"
-  val_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/synthetic/val"
-  test_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/synthetic/test"
-  isolated_tests_dir: "/content/drive/MyDrive/Project_Detector/data/synthetic2"
+  train_path: "/content/Det_Anomalias_UEBA/data/output_thesis_marathon/synthetic/train"
+  val_path: "/content/Det_Anomalias_UEBA/data/output_thesis_marathon/synthetic/val"
+  test_path: "/content/Det_Anomalias_UEBA/data/output_thesis_marathon/synthetic/test"
+  isolated_tests_dir: "/content/Det_Anomalias_UEBA/data/synthetic2"
   target_col: "Is_Anomaly"
   time_nan_strategy: "nan"
 
@@ -15,9 +16,10 @@ datasets:
     overrides: {}
 
 settings:
-  results_root: "/content/drive/MyDrive/Project_Detector/results/banca_runs"
+  results_root: "/content/Det_Anomalias_UEBA/results/banca_runs"
   seeds: [42]
   run_isolated_eval: true
+  run_mixed_eval: false
   isolated_targets: ["test_bruteforce"]    # Executa apenas a auditoria de força bruta
 
 sampling:
