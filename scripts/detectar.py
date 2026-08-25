@@ -18,6 +18,7 @@ from datetime import datetime
 import traceback
 import gc
 import shutil
+import pickle # Adicionado o import crítico para manipulação de metadados
 
 root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if root_path not in sys.path:
@@ -86,7 +87,7 @@ class ExperimentRunner:
         os.makedirs(output_dir, exist_ok=True)
         start_time = time.perf_counter()
         
-        # 1. Pega também os usuários e rótulos para extração fiel
+        # Pega também os usuários e rótulos para extração fiel
         X_test, indices, users, y_test = trainer._build_sequences(test_df, fit=False, return_labels=True)
 
         if len(X_test) == 0:
@@ -94,15 +95,15 @@ class ExperimentRunner:
             return {"pr_auc": 0.0, "roc_auc": 0.0, "f1_score": 0.0, "precision": 0.0, "recall": 0.0, 
                     "tp": 0, "fp": 0, "tn": 0, "fn": 0, "elapsed_sec": 0.0, "mem_peak_mb": 0.0}
 
-        # 2. Calcula os scores brutos
+        # Calcula os scores brutos
         scores = trainer._calculate_scores(X_test)
         
-        # 3. Calcula as predições (1 = Alerta, 0 = Normal) usando os limiares do modelo
+        # Calcula as predições usando os limiares do modelo
         global_fallback = trainer.global_threshold
         thresholds_aplicados = np.array([trainer.user_thresholds.get(str(u), global_fallback) for u in users])
         y_pred = (scores > thresholds_aplicados).astype(int)
 
-        # 4. SALVA AS MATRIZES (.npy) PARA O EXTRATOR E O PLOTADOR
+        # SALVA AS MATRIZES (.npy) PARA O EXTRATOR
         np.save(os.path.join(output_dir, "scores.npy"), scores)
         np.save(os.path.join(output_dir, "y_pred.npy"), y_pred)
         np.save(os.path.join(output_dir, "indices.npy"), indices)
@@ -129,12 +130,6 @@ class ExperimentRunner:
             mem_peak_mb = 0.0
 
         return {**metrics, "elapsed_sec": end_time - start_time, "mem_peak_mb": mem_peak_mb}
-    
-    
-    
-    
-    
-    
 
     def run(self):
         datasets = self.config.get("datasets", [])
@@ -214,15 +209,44 @@ class ExperimentRunner:
                         # Treino
                         results = trainer.run(t_train, t_val, t_test, feature_columns=valid_features)
 
-                        # Avaliação Principal (Verbose=True para imprimir o quadro)
-                        mixed_output = os.path.join(run_dir, "eval_mixed")
-                        print(f"\n   🧪 Avaliando conjunto de teste misto...")
-                        mixed_metrics = self._evaluate_subset(trainer, temporal, t_test, mixed_output, config_final, subset_name=ds_name, verbose=True)
-                        
-                        log_entry = {"seed": seed, "dataset": ds_name, "model_preset": mp_name, **current_hparams, **results, **mixed_metrics}
-                        self.results_log.append(log_entry)
+                        # =========================================================
+                        # SALVAMENTO DO PIPELINE DE ENGENHARIA E CONFIGURAÇÃO (ARQUITETURA MLOPS)
+                        # =========================================================
+                        config_save_path = os.path.join(run_dir, "config_used.yaml")
+                        with open(config_save_path, "w", encoding="utf-8") as f:
+                            yaml.dump(config_final, f)
+                            
+                        meta_path = os.path.join(run_dir, "trainer_meta.pkl")
+                        if os.path.exists(meta_path):
+                            with open(meta_path, "rb") as f:
+                                meta = pickle.load(f)
+                            
+                            # Acopla os objetos já ajustados (fitted) para inferência futura
+                            meta['feature_processor'] = processor
+                            meta['temporal_builder'] = temporal
+                            
+                            with open(meta_path, "wb") as f:
+                                pickle.dump(meta, f)
+                        # =========================================================
 
-                        # Avaliações Isoladas (Ativadas com verbose=True para ver a auditoria isolada)
+                        # =========================================================
+                        # AVALIAÇÃO PRINCIPAL (FLAG RUN_MIXED_EVAL)
+                        # =========================================================
+                        run_mixed = config_final.get("settings", {}).get("run_mixed_eval", True)
+                        
+                        if run_mixed:
+                            mixed_output = os.path.join(run_dir, "eval_mixed")
+                            print(f"\n   🧪 Avaliando conjunto de teste misto...")
+                            mixed_metrics = self._evaluate_subset(trainer, temporal, t_test, mixed_output, config_final, subset_name=ds_name, verbose=True)
+                            
+                            log_entry = {"seed": seed, "dataset": ds_name, "model_preset": mp_name, **current_hparams, **results, **mixed_metrics}
+                            self.results_log.append(log_entry)
+                        else:
+                            print(f"\n   ⏭️ Avaliação do conjunto misto ignorada (run_mixed_eval=False no YAML). Indo direto para os isolados.")
+
+                        # =========================================================
+                        # AVALIAÇÕES ISOLADAS
+                        # =========================================================
                         if isolated_datasets and run_isolated:
                             print(f"\n   🧪 Avaliando {len(isolated_datasets)} ataques isolados...")
                             for iso_name, iso_scaled in isolated_datasets.items():
