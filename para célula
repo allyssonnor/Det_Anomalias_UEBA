@@ -1,3 +1,4 @@
+# PREPARAÇÃO DAS PASTAS
 # 1. Garante que está no diretório correto e atualiza o repo
 %cd /content
 ![ -d "Det_Anomalias_UEBA" ] || git clone https://github.com/allyssonnor/Det_Anomalias_UEBA.git
@@ -9,29 +10,37 @@
 !mv data/data/* data/ 2>/dev/null || true
 !rm -rf data/data
 
-# 3. ATALHOS CRUCIAIS:
-# Mapeia Project_Detector para Det_Anomalias_UEBA
-!mkdir -p /content/drive/MyDrive
-!ln -sfn /content/Det_Anomalias_UEBA /content/Project_Detector
-!ln -sfn /content/Det_Anomalias_UEBA /content/drive/MyDrive/Project_Detector
+# 3. Atalhos
+!rm -f /content/Det_Anomalias_UEBA/data/synthetic
+!rm -f /content/Det_Anomalias_UEBA/data/synthetic2
 
-# Mapeia synthetic2 na raiz de data (resolve o erro do run_thesis_isolated_eval.py)
-!ln -sfn /content/Det_Anomalias_UEBA/data/output_thesis_marathon/synthetic2 /content/Det_Anomalias_UEBA/data/synthetic2
+# Cria links limpos
 !ln -sfn /content/Det_Anomalias_UEBA/data/output_thesis_marathon/synthetic /content/Det_Anomalias_UEBA/data/synthetic
+!ln -sfn /content/Det_Anomalias_UEBA/data/output_thesis_marathon/synthetic2 /content/Det_Anomalias_UEBA/data/synthetic2
 
 # 4. Executa a maratona/detecção
-!python scripts/detectar.py --exp_config config/detectar_CPU.yaml
+!python scripts/detectar.py --exp_config config/detectar_especialista.yaml
 
-# 5. Executa a avaliação isolada
-!python scripts/run_thesis_isolated_eval.py
+import sys
+import os
+from IPython.display import Image, display, HTML
 
-# 6. Executa o extract_anomalies apontando para o modelo e teste
-!python scripts/extract_anomalies.py \
-  --output_dir /content/Project_Detector/results/colab_cpu_runs/full/marathon_seed42/Synthetic_MLP_Single_CPU_threshold_modeper_user_seq_len20_max_iter50/eval_mixed \
-  --test_csv data/output_thesis_marathon/synthetic/test/test.jsonl
+# 1. Garante o diretório de trabalho correto no Google Colab
+PROJECT_DIR = '/content/Det_Anomalias_UEBA'
+if PROJECT_DIR not in sys.path:
+    sys.path.insert(0, PROJECT_DIR)
+os.chdir(PROJECT_DIR)
 
-# 7. Executa o script de plot apontando para o CSV correto com predições (evitando o master_results_table.csv)
+display(HTML("<h3>🚀 Executando inferência e gerando dashboard para a banca...</h3>"))
 
-%run scripts/plotar4 --csv results/colab_cpu_runs/full/marathon_seed42/master_results_table.csv
-from IPython.display import Image, display
-display(Image("results/dashboard_arquitetura.png"))
+# 2. Executa o script de inferência passando a config e o dataset de teste isolado (ex: bruteforce)
+!PYTHONPATH=. python scripts/inferir.py --config config/detectar_especialista.yaml --data data/synthetic2/test_bruteforce/test_bruteforce.jsonl
+
+# 3. Exibe o Dashboard gerado diretamente na tela do Colab
+plot_final = "results/dashboard_inferencia_banca.png"
+if os.path.exists(plot_final):
+    display(HTML("<br><h4>🏆 DASHBOARD DE INFERÊNCIA EXECUTADO COM SUCESSO:</h4>"))
+    display(Image(filename=plot_final, width=1000))
+else:
+    print(f"❌ Imagem não encontrada no caminho: {plot_final}")
+
