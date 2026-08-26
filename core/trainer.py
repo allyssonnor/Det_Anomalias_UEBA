@@ -167,13 +167,25 @@ class Trainer:
                 else:
                     self.model.fit(X_train)
             
+            # =========================================================
+            # SALVAMENTO ROBUSTO UNIVERSAL (FALLBACK PARA PICKLE)
+            # =========================================================
             if save_model:
                 os.makedirs(model_path, exist_ok=True)
+                
+                # Tenta salvar com método nativo .save() se existir
                 if hasattr(self.model, "save"): 
                     self.model.save(model_path)
+                else:
+                    # Fallback genérico para qualquer modelo (Isolation Forest, LOF, OCSVM, etc.)
+                    with open(os.path.join(model_path, "model.pkl"), "wb") as f:
+                        pickle.dump(self.model, f)
+                    print(f"💾 [Trainer] Modelo salvo via fallback pickle em: {model_path}")
+                
+                # Salva metadados (scalers, feature_columns)
                 with open(meta_path, "wb") as f:
                     pickle.dump({'scalers': self.scalers, 'feature_columns': self.feature_columns}, f)
-                print(f"💾 [Trainer] Modelo e metadados salvos com sucesso em: {model_path}")
+                print(f"💾 [Trainer] Metadados salvos em: {meta_path}")
 
         # -------------------- VALIDAÇÃO --------------------
         print("\n--- [Trainer] Gerando Janelas de VALIDAÇÃO ---")
