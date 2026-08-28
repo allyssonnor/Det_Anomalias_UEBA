@@ -105,9 +105,9 @@ settings:
 
 # --- CAMADA DE DADOS (Colab Paths) ---
 data:
-  train_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/synthetic/train"
-  val_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/synthetic/val"
-  test_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/synthetic/test"
+  train_path: "/content/Det_Anomalias_UEBA/data/synthetic/train"
+  val_path: "/content/Det_Anomalias_UEBA/data/synthetic/val"
+  test_path: "/content/Det_Anomalias_UEBA/data/synthetic/test"
 
   # Coluna de ground truth (gabarito)
   target_col: "Is_Anomaly"
@@ -139,7 +139,7 @@ training:
 
 # --- CAMADA DE AMOSTRAGEM (DEBUG vs FULL) ---
 sampling:
-  mode: "debug"        # "full" para rodar com o conjunto de dados completo na GPU T4
+  mode: "full"        # "full" para rodar com o conjunto de dados completo na GPU T4
   train_size: 5000
   val_size: 1000
   test_size: 1000
