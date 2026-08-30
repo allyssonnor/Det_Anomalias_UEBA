@@ -1,3 +1,4 @@
+
 # ==============================================================================
 # PLANO ESTRUTURADO DE EXPERIMENTOS CONSOLIDADO - MARATONA DE TESE (CPU COLAB)
 # ==============================================================================
@@ -105,6 +106,9 @@ settings:
 
 # --- CAMADA DE DADOS (Colab Paths) ---
 data:
+# O caminho do novo arquivão único que o seu gerador vai cuspir
+#  dataset_path: "/content/Det_Anomalias_UEBA/data/output_thesis_marathon/synthetic/dataset_master.jsonl"
+
   train_path: "/content/Det_Anomalias_UEBA/data/synthetic/train"
   val_path: "/content/Det_Anomalias_UEBA/data/synthetic/val"
   test_path: "/content/Det_Anomalias_UEBA/data/synthetic/test"
@@ -139,10 +143,17 @@ training:
 
 # --- CAMADA DE AMOSTRAGEM (DEBUG vs FULL) ---
 sampling:
-  mode: "full"        # "full" para rodar com o conjunto de dados completo na GPU T4
+  mode: "debug"        # "full" para rodar com o conjunto de dados completo na GPU T4
   train_size: 5000
   val_size: 1000
   test_size: 1000
+  
+  # NOVA SEÇÃO: Define como fatiar o dataset mestre
+  split_strategy: "random" # Troque para "chronological" para a banca
+  split_ratios:
+    train: 0.7
+    val: 0.2
+    test: 0.1
 
 # --- LÓGICA TEMPORAL ---
 temporal:
