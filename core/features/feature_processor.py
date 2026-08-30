@@ -24,7 +24,7 @@ FEATURE_REGISTRY = {
 class FeatureProcessor:
     """
     FeatureProcessor UEBA com:
-    - Filtro anti-leakage no fit() (apenas dados NORMALES)
+    - Filtro anti-leakage no fit() (apenas dados NORMAIS)
     - Frequências por usuário (UEBA)
     - Builders para 8 grupos de features
     """
@@ -67,12 +67,12 @@ class FeatureProcessor:
         self.features_frozen = True
 
     # =========================================================
-    # FIT (APENAS NORMALES → ANTI-LEAKAGE)
+    # FIT (APENAS NORMAIS → ANTI-LEAKAGE)
     # =========================================================
     def fit(self, df):
         """
         Ancora as distribuições normais usando ESTRITAMENTE o conjunto de treinamento
-        com eventos NORMALES (Is_Anomaly == 0).
+        com eventos NORMAIS (Is_Anomaly == 0).
         """
         if df is None or df.empty:
             return
@@ -87,7 +87,7 @@ class FeatureProcessor:
         else:
             df_temp = df.copy()
 
-        print("🧠 [FeatureProcessor] A processar os parâmetros históricos e codificadores (APENAS NORMALES)...")
+        print("🧠 [FeatureProcessor] A processar os parâmetros históricos e codificadores (APENAS NORMAIS)...")
         
         # Converte tempo para datetime (necessário para os builders)
         if 'Time' not in df_temp.columns:
