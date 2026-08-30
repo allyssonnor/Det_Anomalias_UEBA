@@ -1,61 +1,50 @@
-#NOVA VERSÃO DO TEMPORAL BUILDER
-import numpy as np
+# core/temporal_builder.py
+
 import pandas as pd
+import numpy as np
 
 class TemporalBuilder:
-    """
-    Construtor de contexto temporal para processamento de sequências.
-    Gera sessões de utilizador com base em inatividade (timeout) e
-    limita o tamanho máximo de cada sessão (chunking).
-    """
-    def __init__(self, config: dict):
+    def __init__(self, config):
         self.config = config
-        # Configurações de hiperparâmetros com fallbacks seguros
-        self.sequence_length = self.config.get("model", {}).get("sequence_length", 10)
-        
-        temporal_cfg = self.config.get("temporal", {})
-        self.session_timeout = temporal_cfg.get("session_timeout", 1800)
-        self.max_events_session = temporal_cfg.get("max_events_session", 1000)
+        temporal_cfg = config.get("temporal", {})
+        self.session_timeout = temporal_cfg.get("session_timeout", 3600)
+        self.min_events_session = temporal_cfg.get("min_events_session", 2)
 
-    def transform(self, df: pd.DataFrame) -> pd.DataFrame:
-        # 1. Validação defensiva do DataFrame de entrada
+    def transform(self, df):
+        """
+        Organiza o log em sessões temporais contínuas por usuário,
+        ordenando cronologicamente para garantir que não haja vazamento do futuro.
+        """
         if df is None or df.empty:
-            return df
+            return pd.DataFrame()
 
-        df = df.copy()
-
-        # Garantir a existência das colunas obrigatórias com logs claros
-        required_cols = ["Time", "UserID"]
-        missing_cols = [col for col in required_cols if col not in df.columns]
-        if missing_cols:
-            print(f"⚠️ [TemporalBuilder] Dataset em falta das colunas obrigatórias: {missing_cols}. Processamento ignorado.")
-            return df
-
-        # 2. Ordenação cronológica estável por utilizador
-        df = df.sort_values(["UserID", "Time"]).reset_index(drop=True)
-
-        # 3. Diferença de tempo entre eventos consecutivos do mesmo utilizador
-        df["time_diff"] = df.groupby("UserID")["Time"].diff().fillna(0)
-
-        # 4. Identificação de sub-sessões baseadas puramente em timeout
-        df["new_session_by_timeout"] = (df["time_diff"] > self.session_timeout).astype(int)
-        df["sub_session_id"] = df.groupby("UserID")["new_session_by_timeout"].cumsum()
-
-        # 5. Divisão de sessões excessivamente longas (Chunking)
-        # Evita que uma única sessão tenha mais eventos do que o limite definido
-        df["chunk_id"] = df.groupby(["UserID", "sub_session_id"]).cumcount() // self.max_events_session
-
-        # 6. Geração de IDs de Sessão Globalmente Únicos (Sem colisões)
-        # Uma nova sessão global é demarcada se houver mudança de Utilizador, de sub-sessão ou de chunk
-        session_change = (
-            (df["UserID"] != df["UserID"].shift()) |
-            (df["sub_session_id"] != df["sub_session_id"].shift()) |
-            (df["chunk_id"] != df["chunk_id"].shift())
-        )
+        print(f"🕒 [TemporalBuilder] Processando dinâmica temporal (Timeout: {self.session_timeout}s)...")
         
-        df["session_id"] = session_change.astype(int).cumsum()
+        df_temp = df.copy()
 
-        # 7. Limpeza e remoção de colunas auxiliares temporárias
-        df.drop(columns=["new_session_by_timeout", "sub_session_id", "chunk_id"], inplace=True)
+        # 1. ORDENAÇÃO CRONOLÓGICA ABSOLUTA (Anti-Leakage)
+        if 'Time' not in df_temp.columns:
+            print("⚠️ Coluna 'Time' ausente. Impossível construir sequências. Retornando dataset bruto.")
+            return df_temp
+            
+        df_temp = df_temp.sort_values(by=['UserID', 'Time']).reset_index(drop=True)
 
-        return df
+        # 2. CALCULAR DELTA TIME E SESSÕES
+        # Agrupa por UserID e calcula a diferença de tempo entre o evento atual e o anterior
+        df_temp['time_diff'] = df_temp.groupby('UserID')['Time'].diff().fillna(0)
+        
+        # Identifica o início de uma nova sessão quando o gap for maior que o timeout definido
+        df_temp['new_session'] = (df_temp['time_diff'] > self.session_timeout).astype(int)
+        
+        # Cria um ID único para cada sessão usando a soma cumulativa
+        df_temp['session_id'] = df_temp.groupby('UserID')['new_session'].cumsum()
+        
+        # Opcional: Adiciona o ID do usuário ao session_id para ser globalmente único
+        df_temp['session_id'] = df_temp['UserID'].astype(str) + "_" + df_temp['session_id'].astype(str)
+
+        # Limpeza das colunas auxiliares
+        df_temp = df_temp.drop(columns=['time_diff', 'new_session'])
+        
+        print(f"   ✅ Sessões identificadas. Total de sessões únicas: {df_temp['session_id'].nunique()}")
+
+        return df_temp
