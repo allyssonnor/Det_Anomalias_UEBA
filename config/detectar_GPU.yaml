@@ -83,22 +83,22 @@ model_presets:
   # ------------------------------------------------------------
   # Autoencoder_Tiny
   # ------------------------------------------------------------
-  - name: "Autoencoder_Tiny"
-    overrides:
-      model.type: "autoencoder"
-      model.autoencoder.layers: [32, 16, 8]          # Apenas 2 camadas ocultas + gargalo
-      training.batch_size: 64
-      training.epochs: 50
+#  - name: "Autoencoder_Tiny"
+#    overrides:
+#      model.type: "autoencoder"
+#      model.autoencoder.layers: [32, 16, 8]          # Apenas 2 camadas ocultas + gargalo
+#      training.batch_size: 64
+#      training.epochs: 50
   # ------------------------------------------------------------
   # LSTM_Tiny
   # ------------------------------------------------------------
-  - name: "LSTM_Tiny"
-    overrides:
-      model.type: "lstm_autoencoder"
-      model.lstm_autoencoder.lstm_units: [32, 16] # Unidades LSTM reduzidas    #depois mudar para [32, 16, 8] OU [32, 16]
-      model.lstm_autoencoder.latent_dim: 4       # Gargalo minúsculo
-      training.batch_size: 64                    # depois mudar para 64
-      training.epochs: 50                        # depois mudar para 50
+#  - name: "LSTM_Tiny"
+#    overrides:
+#      model.type: "lstm_autoencoder"
+#      model.lstm_autoencoder.lstm_units: [32, 16] # Unidades LSTM reduzidas    #depois mudar para [32, 16, 8] OU [32, 16]
+#      model.lstm_autoencoder.latent_dim: 4       # Gargalo minúsculo
+#      training.batch_size: 64                    # depois mudar para 64
+#      training.epochs: 50                        # depois mudar para 50
   # ------------------------------------------------------------
   # Ensemble_Tiny (os trê modelos: MLP + LSTM + IF)
   # ------------------------------------------------------------
@@ -118,20 +118,20 @@ model_presets:
   # ------------------------------------------------------------
   # MLP_Autoencoder_ON_ROIDS
   # ------------------------------------------------------------
-#  - name: "MLP_Autoencoder_ON_ROIDS"
-#    overrides:
-#      model.type: "mlp_autoencoder"
-#      model.mlp_autoencoder.dense_units: [64, 32] # Camadas densas reduzidas
-#      model.mlp_autoencoder.latent_dim: 4
-#      training.batch_size: 64
-#      training.epochs: 30
+  - name: "MLP_Autoencoder_ON_ROIDS"
+    overrides:
+      model.type: "mlp_autoencoder"
+      model.mlp_autoencoder.dense_units: [64, 32] # Camadas densas reduzidas
+      model.mlp_autoencoder.latent_dim: 4
+      training.batch_size: 64
+      training.epochs: 20
 
 # ==============================================================================
 # 3. GRID DE HIPERPARÂMETROS (Parâmetros da varredura sistemática)
 # ==============================================================================
 hyperparameter_grid:
   # Modo de threshold: global (um limiar para todos) OU per_user (limiar por usuário)
-  training.threshold_mode: ["global", "per_user"]
+  training.threshold_mode: ["per_user"]
 
   # Tamanho da janela temporal (quantos eventos passados o modelo enxerga)
   # Fixado em 20 para os melhores modelos de deep learning
