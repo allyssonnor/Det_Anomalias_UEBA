@@ -18,17 +18,17 @@ datasets:
 
 #  - name: "CERT"
 #    overrides:
-#      data.train_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/CERT/train"
-#      data.val_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/CERT/val"
-#      data.test_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/CERT/test"
+#      data.train_path: "/content/Det_Anomalias_UEBA/data/output_thesis_marathon/CERT/train"
+#      data.val_path: "/content/Det_Anomalias_UEBA/data/output_thesis_marathon/CERT/val"
+#      data.test_path: "/content/Det_Anomalias_UEBA/data/output_thesis_marathon/CERT/test"
 #      data.target_col: "Is_Anomaly"
 #      data.label_filename: "labels.csv"
 
 #  - name: "LANL"
 #    overrides:
-#      data.train_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/lanl/train"
-#      data.val_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/lanl/val"
-#      data.test_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/lanl/test"
+#      data.train_path: "/content/Det_Anomalias_UEBA/data/output_thesis_marathon/lanl/train"
+#      data.val_path: "/content/Det_Anomalias_UEBA/data/output_thesis_marathon/lanl/val"
+#      data.test_path: "/content/Det_Anomalias_UEBA/data/output_thesis_marathon/lanl/test"
 #      data.target_col: "Is_Anomaly"
 #      data.label_filename: "gabarito.csv"
 
@@ -121,9 +121,9 @@ model_presets:
   - name: "MLP_Autoencoder_ON_ROIDS"
     overrides:
       model.type: "mlp_autoencoder"
-      model.mlp_autoencoder.dense_units: [64, 32] # Camadas densas reduzidas
-      model.mlp_autoencoder.latent_dim: 4
-      training.batch_size: 64
+      model.mlp_autoencoder.dense_units: [256, 128, 64] # [64, 32] Camadas densas reduzidas
+      model.mlp_autoencoder.latent_dim: 16              # 4
+      training.batch_size: 1024                         # 64
       training.epochs: 20
 
 # ==============================================================================
@@ -145,10 +145,10 @@ hyperparameter_grid:
 # ==============================================================================
 settings:
   # Diretório onde os resultados do Google Colab serão salvos
-  results_root: "/content/drive/MyDrive/Project_Detector/results/colab_gpu_runs"
+  results_root: "/content/Det_Anomalias_UEBA/results"
 
   # Sementes completas para reprodutibilidade e cálculo de intervalo de confiança
-  seeds: [42, 123, 999]
+  seeds: [42]             #[42, 123, 999]
 
 #  generate_plots: true
   save_checkpoints: true
@@ -159,9 +159,9 @@ settings:
 
 # --- CAMADA DE DADOS (Google Colab Paths) ---
 data:
-  train_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/synthetic/train"
-  val_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/synthetic/val"
-  test_path: "/content/drive/MyDrive/Project_Detector/data/output_thesis_marathon/synthetic/test"
+  train_path: "/content/Det_Anomalias_UEBA/data/synthetic/train"
+  val_path: "/content/Det_Anomalias_UEBA/data/synthetic/val"
+  test_path: "/content/Det_Anomalias_UEBA/data/synthetic/test"
 
   # Coluna de ground truth (gabarito)
   target_col: "Is_Anomaly"
@@ -217,4 +217,4 @@ features:
     - "privilege_anomaly"
 
 # --- DIRETÓRIO DE SAÍDA (FALLBACK LOCAL) ---
-output_dir: "results/colab_gpu_runs"
+output_dir: "content/Det_Anomalias_UEBA/results/gpu_runs"
