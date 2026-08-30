@@ -46,7 +46,8 @@ model_presets:
       training.batch_size: 64            
       model.mlp_single:
         hidden_layer_sizes: [32]      
-        max_iter: 50                      
+        max_iter: 50
+        batch_size: 64                    
   # ------------------------------------------------------------
   # Isolation Forest CPU
   # ------------------------------------------------------------
@@ -78,11 +79,12 @@ model_presets:
 # ==============================================================================
 hyperparameter_grid:
   # Modo de threshold: global (um limiar para todos) OU per_user (limiar por usuário)
-  training.threshold_mode: ["global", "per_user"]
+#  training.threshold_mode: ["global", "per_user"]
+  training.threshold_mode: ["per_user"]
 
   # Tamanho da janela temporal (quantos eventos passados o modelo enxerga)
   # Fixado em 20 para os melhores modelos de deep learning
-  model.sequence_length: [10]
+  model.sequence_length: [20]
 
   # Número de épocas máximo parametrizado uniformemente para a maratona
   training.epochs: [50]
@@ -106,7 +108,7 @@ settings:
 
 # --- CAMADA DE DADOS (Colab Paths) ---
 data:
-# O caminho do novo arquivão único que o seu gerador vai cuspir
+# Usar quando for dataset único
 #  dataset_path: "/content/Det_Anomalias_UEBA/data/output_thesis_marathon/synthetic/dataset_master.jsonl"
 
   train_path: "/content/Det_Anomalias_UEBA/data/synthetic/train"
