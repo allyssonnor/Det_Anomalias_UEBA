@@ -34,6 +34,9 @@ class FeatureProcessor:
         self.features_frozen = False
         self.final_feature_names = []
         self.output_dir = config.get("output_dir")
+        feature_cfg = config.get("features", {})
+        self.rate_window = max(1, int(feature_cfg.get("rate_window", 20)))
+        self.excluded_features = set(feature_cfg.get("exclude_features", []))
         
         # Estado histórico (baseline) – agora guarda POR USUÁRIO
         self.historical_state = {}
@@ -65,6 +68,12 @@ class FeatureProcessor:
                 missing = set(spec["required"]) - available
                 print(f"  ❌ [SKIP] '{name}' ignorada. Faltam: {missing}")
         self.features_frozen = True
+
+    def _rolling_rate(self, df, source_col):
+        """Compute a causal per-user event rate over the configured window."""
+        return df.groupby("UserID", sort=False)[source_col].transform(
+            lambda values: values.rolling(self.rate_window, min_periods=1).mean()
+        )
 
     # =========================================================
     # FIT (APENAS NORMAIS → ANTI-LEAKAGE)
@@ -220,7 +229,8 @@ class FeatureProcessor:
         # Identifica as features numéricas (excluindo metadados)
         self.final_feature_names = [
             c for c in df.columns
-            if c not in meta_cols and pd.api.types.is_numeric_dtype(df[c])
+            if c not in meta_cols and c not in self.excluded_features
+            and pd.api.types.is_numeric_dtype(df[c])
         ]
         
         # Salva metadados (opcional)
@@ -300,18 +310,14 @@ class FeatureProcessor:
                 (df["EventID"] == 4648)
             ).astype(int)
             # Taxa cumulativa (expanding) – simula o histórico do usuário
-            df["network_logon_rate"] = df.groupby("UserID")["network_logon"].transform(
-                lambda x: x.expanding().sum().fillna(0)
-            )
+            df["network_logon_rate"] = self._rolling_rate(df, "network_logon")
             
         return df
 
     def build_auth_failure(self, df):
         """Detecta falhas de autenticação e códigos de erro específicos."""
         df["is_failed"] = (df["EventID"] == 4625).astype(int)
-        df["fail_rate"] = df.groupby("UserID")["is_failed"].transform(
-            lambda x: x.expanding().sum().fillna(0)
-        )
+        df["fail_rate"] = self._rolling_rate(df, "is_failed")
         
         if "SubStatus" in df.columns:
             sub_str = df["SubStatus"].astype(str).str.upper()
@@ -338,9 +344,7 @@ class FeatureProcessor:
         else:
             df["rdp_event"] = (df["EventID"] == 4624).astype(int)
             
-        df["rdp_rate"] = df.groupby("UserID")["rdp_event"].transform(
-            lambda x: x.expanding().sum().fillna(0)
-        )
+        df["rdp_rate"] = self._rolling_rate(df, "rdp_event")
         return df
 
     def build_golden_ticket(self, df):
@@ -364,9 +368,7 @@ class FeatureProcessor:
         """Detecta execução de processos raros (frequência baixa por usuário)."""
         if "ProcessName_enc" in df.columns:
             df["rare_process"] = (df["ProcessName_enc"] < 0.02).astype(int)
-            df["rare_process_rate"] = df.groupby("UserID")["rare_process"].transform(
-                lambda x: x.expanding().sum().fillna(0)
-            )
+            df["rare_process_rate"] = self._rolling_rate(df, "rare_process")
         return df
 
     def build_privilege(self, df):
@@ -378,7 +380,6 @@ class FeatureProcessor:
                 "psexec.exe", "mmc.exe", "vssadmin.exe"
             ]
             df["admin_activity"] = proc_lower.isin(admin_tools).astype(int)
-            df["admin_rate"] = df.groupby("UserID")["admin_activity"].transform(
-                lambda x: x.expanding().sum().fillna(0)
-            )
+            df["admin_rate"] = self._rolling_rate(df, "admin_activity")
         return df
+
