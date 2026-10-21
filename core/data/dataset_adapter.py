@@ -189,6 +189,33 @@ class DatasetAdapter:
         train_df.to_csv(os.path.join(self.output_dir, "train_audit.csv"), index=False)
         val_df.to_csv(os.path.join(self.output_dir, "val_audit.csv"), index=False)
         test_df.to_csv(os.path.join(self.output_dir, "test_audit.csv"), index=False)
+
+        split_frames = {"train": train_df, "validation": val_df, "test": test_df}
+        split_audit = {"strategy": split_mode, "seed": int(seed), "partitions": {}, "overlap": {}}
+        for partition_name, partition in split_frames.items():
+            positives = int(partition[self.target_col].fillna(0).sum()) if self.target_col in partition else 0
+            split_audit["partitions"][partition_name] = {
+                "events": int(len(partition)),
+                "anomalous_events": positives,
+                "event_prevalence": float(positives / len(partition)) if len(partition) else 0.0,
+                "users": int(partition["UserID"].nunique()) if "UserID" in partition else 0,
+                "attack_ids": int(partition["AttackID"].nunique()) if "AttackID" in partition else 0,
+                "time_min": float(partition["Time"].min()) if "Time" in partition and len(partition) else None,
+                "time_max": float(partition["Time"].max()) if "Time" in partition and len(partition) else None,
+            }
+
+        for left, right in (("train", "validation"), ("train", "test"), ("validation", "test")):
+            split_audit["overlap"][f"{left}_{right}"] = {}
+            for column in ("UserID", "AttackID"):
+                if column in split_frames[left] and column in split_frames[right]:
+                    left_values = set(split_frames[left][column].dropna().astype(str))
+                    right_values = set(split_frames[right][column].dropna().astype(str))
+                    split_audit["overlap"][f"{left}_{right}"][column] = len(left_values & right_values)
+
+        audit_path = os.path.join(self.output_dir, f"split_audit_{split_mode}_seed{seed}.json")
+        with open(audit_path, "w", encoding="utf-8") as audit_file:
+            json.dump(split_audit, audit_file, indent=2, ensure_ascii=False)
+
         print(f"   ✅ Auditoria salva em: {self.output_dir}")
         print(f"   📊 Tamanhos: Treino({len(train_df)}) | Val({len(val_df)}) | Teste({len(test_df)})")
         return train_df, val_df, test_df
