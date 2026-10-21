@@ -175,9 +175,18 @@ class DatasetAdapter:
             val_end = train_end + int(n * val_ratio)
             train_df, val_df, test_df = master_df.iloc[:train_end].copy(), master_df.iloc[train_end:val_end].copy(), master_df.iloc[val_end:].copy()
         else:  # random
-            train_val_df, test_df = train_test_split(master_df, test_size=test_ratio, random_state=seed, shuffle=True)
-            relative_val_ratio = val_ratio / (train_ratio + val_ratio)
-            train_df, val_df = train_test_split(train_val_df, test_size=relative_val_ratio, random_state=seed, shuffle=True)
+            n = len(master_df)
+            train_size = int(n * train_ratio)
+            val_size = int(n * val_ratio)
+            test_size = n - train_size - val_size
+            if min(train_size, val_size, test_size) <= 0:
+                raise ValueError("As proporções de split devem gerar partições não vazias.")
+            train_val_df, test_df = train_test_split(
+                master_df, test_size=test_size, random_state=seed, shuffle=True
+            )
+            train_df, val_df = train_test_split(
+                train_val_df, test_size=val_size, random_state=seed, shuffle=True
+            )
             # Reordena para manter coerência temporal interna
             for df in [train_df, val_df, test_df]:
                 if 'Time' in df.columns:
