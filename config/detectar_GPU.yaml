@@ -206,6 +206,8 @@ temporal:
 # --- CONFIGURAÇÃO DE FEATURES ---
 features:
   enabled: true
+  rate_window: 20
+  exclude_features: []
   enabled_groups:
     - "temporal_anomaly"
     - "volume_anomaly"
