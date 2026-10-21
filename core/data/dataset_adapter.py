@@ -137,7 +137,12 @@ class DatasetAdapter:
                 if nrows == 0:
                     break
             try:
-                if "json" in ext:
+                is_jsonl = "json" in ext
+                if not is_jsonl:
+                    # Some JSON Lines samples are distributed with a .txt suffix.
+                    with open(f, "r", encoding="utf-8-sig") as source:
+                        is_jsonl = source.read(4096).lstrip().startswith("{")
+                if is_jsonl:
                     temp = pd.read_json(f, lines=True, nrows=nrows)
                 else:
                     temp = pd.read_csv(f, nrows=nrows)
