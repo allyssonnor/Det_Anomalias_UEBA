@@ -58,8 +58,11 @@ def run_external_evaluation(config, test_df=None, scores=None, indices=None, ver
     report_dict = classification_report(y_test, y_pred, output_dict=True, zero_division=0)
     class_1 = report_dict.get("1", report_dict.get("1.0", report_dict.get("True", {})))
 
+    prevalence = float(np.mean(y_test)) if len(y_test) else 0.0
+    lift_pr = float(pr_auc / prevalence) if prevalence > 0 else 0.0
     metrics_dict = {
-        "pr_auc": float(pr_auc), "roc_auc": float(roc_auc),
+        "pr_auc": float(pr_auc), "prevalence": prevalence, "lift_pr": lift_pr,
+        "roc_auc": float(roc_auc),
         "f1_score": float(class_1.get("f1-score", 0.0)),
         "precision": float(class_1.get("precision", 0.0)),
         "recall": float(class_1.get("recall", 0.0)),
@@ -98,6 +101,7 @@ def run_external_evaluation(config, test_df=None, scores=None, indices=None, ver
         print(f" 🎯 Recall (Sensibilidade)    : {metrics_dict['recall']:.4f}")
         print(f" 🎯 F1-Score                  : {metrics_dict['f1_score']:.4f}")
         print(f" 🎯 PR-AUC                    : {metrics_dict['pr_auc']:.4f}")
+        print(f" 🎯 Lift_PR                   : {metrics_dict['lift_pr']:.4f}x")
         print(f" 🎯 ROC-AUC                   : {metrics_dict['roc_auc']:.4f}")
         print("="*60 + "\n")
         
