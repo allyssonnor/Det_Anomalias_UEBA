@@ -72,5 +72,17 @@ class ProtocolSafeguardsTests(unittest.TestCase):
         self.assertFalse(model.fit_called)
 
 
+    def test_users_without_validation_attacks_use_global_fallback(self):
+        with tempfile.TemporaryDirectory() as output_dir:
+            trainer = Trainer({"output_dir": output_dir}, model=None)
+            scores = np.arange(14, dtype=float)
+            users = np.array(["attacked"] * 5 + ["clean"] * 5 + ["short"] * 4)
+            labels = np.array([1, 0, 0, 0, 0] + [0] * 9)
+
+            thresholds = trainer._personalized_thresholds(scores, users, labels, 50)
+
+        self.assertEqual(list(thresholds), ["attacked"])
+        self.assertEqual(thresholds["attacked"], 2.0)
+
 if __name__ == "__main__":
     unittest.main()
