@@ -57,6 +57,20 @@ class Trainer:
         beta = 2.0
         return (1 + beta**2) * (precision * recall) / ((beta**2 * precision) + recall)
 
+    def _personalized_thresholds(self, scores, users, labels, percentile, min_windows=5):
+        """Calibrate only users with enough validation windows and positive examples."""
+        if labels is None:
+            return {}
+        scores = np.asarray(scores)
+        users = np.asarray(users)
+        labels = np.asarray(labels)
+        thresholds = {}
+        for uid in np.unique(users):
+            user_mask = users == uid
+            if np.sum(user_mask) >= min_windows and np.any(labels[user_mask] == 1):
+                thresholds[str(uid)] = float(np.percentile(scores[user_mask], percentile))
+        return thresholds
+
     # =========================================================
     # PREPARAÇÃO E ESCALONAMENTO
     # =========================================================
@@ -269,10 +283,9 @@ class Trainer:
             self.global_threshold = float(np.percentile(val_scores, best_p)) if val_scores.size > 0 else 0.5
             self.user_thresholds = {"__GLOBAL_FALLBACK__": self.global_threshold}
             if thresh_mode == "per_user":
-                for uid in np.unique(val_users):
-                    user_mask = (val_users == uid)
-                    if np.sum(user_mask) >= 5:
-                        self.user_thresholds[str(uid)] = float(np.percentile(val_scores[user_mask], best_p))
+                self.user_thresholds.update(
+                    self._personalized_thresholds(val_scores, val_users, y_val, best_p)
+                )
             print(f"⚖️ [YAML] Percentil fixado em: {best_p}%")
 
         # ---------- LIMIAR OTIMIZADO (F2-Score) ----------
@@ -288,11 +301,9 @@ class Trainer:
                 for p in np.arange(percentile_min, percentile_max + percentile_step / 2, percentile_step):
                     t_glob = np.percentile(val_scores, p)
                     if thresh_mode == "per_user":
-                        u_t_dict = {
-                            str(uid): np.percentile(val_scores[val_users == uid], p)
-                            for uid in np.unique(val_users)
-                            if np.sum(val_users == uid) >= 5
-                        }
+                        u_t_dict = self._personalized_thresholds(
+                            val_scores, val_users, y_val, p
+                        )
                         y_pred = (val_scores > np.array([u_t_dict.get(str(uid), t_glob) for uid in val_users])).astype(int)
                     else:
                         y_pred = (val_scores > t_glob).astype(int)
@@ -308,10 +319,9 @@ class Trainer:
             self.global_threshold = float(np.percentile(val_scores, best_p)) if val_scores.size > 0 else 0.5
             self.user_thresholds = {"__GLOBAL_FALLBACK__": self.global_threshold}
             if thresh_mode == "per_user":
-                for uid in np.unique(val_users):
-                    user_mask = (val_users == uid)
-                    if np.sum(user_mask) >= 5:
-                        self.user_thresholds[str(uid)] = float(np.percentile(val_scores[user_mask], best_p))
+                self.user_thresholds.update(
+                    self._personalized_thresholds(val_scores, val_users, y_val, best_p)
+                )
 
         # Salva limiares
         with open(os.path.join(self.output_dir, "user_thresholds.json"), "w") as f:
