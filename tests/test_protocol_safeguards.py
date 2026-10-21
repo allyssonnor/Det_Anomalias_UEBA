@@ -68,7 +68,7 @@ class ProtocolSafeguardsTests(unittest.TestCase):
             config["output_dir"] = output_dir
             trainer = Trainer(config, model)
             with self.assertRaisesRegex(ValueError, "Não use a validação"):
-                trainer.run(train_df=train, val_df=validation)
+                trainer.run(train_df=train, val_df=validation, test_df=None)
         self.assertFalse(model.fit_called)
 
 
