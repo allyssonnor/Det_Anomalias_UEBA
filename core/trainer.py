@@ -16,6 +16,15 @@ except ImportError:
 
 
 class Trainer:
+    def _checkpoint_uses_current_protocol(self, meta_path):
+        """Reject checkpoints created before validation was kept out of training."""
+        try:
+            with open(meta_path, "rb") as f:
+                meta = pickle.load(f)
+            return meta.get("training_protocol") == "train_val_independent_v2"
+        except Exception:
+            return False
+
     def __init__(self, config, model):
         self.config = config
         self.model = model
@@ -173,7 +182,7 @@ class Trainer:
         meta_path = os.path.join(self.output_dir, "trainer_meta.pkl")
 
         # -------------------- TREINO (com checkpoint) --------------------
-        if do_resume and os.path.exists(model_path) and os.path.exists(meta_path):
+        if do_resume and os.path.exists(model_path) and os.path.exists(meta_path) and self._checkpoint_uses_current_protocol(meta_path):
             print("🔄 [Trainer] Checkpoint detectado. Retomando execução...")
             with open(meta_path, "rb") as f:
                 meta = pickle.load(f)
@@ -184,14 +193,17 @@ class Trainer:
         else:
             print(f"🚀 [Trainer] Iniciando treino do zero (Modo: {thresh_mode})...")
 
-            # Filtra apenas normais para o treino (base segura)
-            if target in train_df.columns:
-                train_df_pure = train_df[train_df[target] == 0].copy()
+            # O treino supervisionado usa somente rótulos da partição de treino.
+            # A validação fica reservada à calibração e nunca fornece exemplos ao modelo.
+            if is_supervised:
+                train_df_fit = train_df.copy()
+            elif target in train_df.columns:
+                train_df_fit = train_df[train_df[target] == 0].copy()
             else:
-                train_df_pure = train_df.copy()
+                train_df_fit = train_df.copy()
 
             X_train, _, _, y_train = self._build_sequences(
-                train_df_pure,
+                train_df_fit,
                 fit=True,
                 return_labels=True,
                 feature_columns=feature_columns
@@ -199,26 +211,13 @@ class Trainer:
             if y_train is None:
                 y_train = np.zeros(len(X_train))
 
-            # ------------- SUPERVISIONADO: Injeção de ataques da validação -------------
-            if is_supervised and target_attack and "AnomalyType" in val_df.columns:
-                print(f"   💉 [SUPERVISIONADO] Injetando anomalias '{target_attack}' da validação no treino...")
-                mask = (val_df[target] == 0) | (val_df["AnomalyType"] == target_attack)
-                val_filtered = val_df[mask].copy()
-
-                X_val_inj, _, _, y_val_inj = self._build_sequences(
-                    val_filtered,
-                    fit=False,
-                    return_labels=True
+            if is_supervised and len(np.unique(y_train)) < 2:
+                raise ValueError(
+                    "Treino supervisionado contém uma única classe. "
+                    "Não use a validação para obter positivos; forneça ataques "
+                    "na partição de treino ou retire o modelo supervisionado "
+                    "deste protocolo confirmatório."
                 )
-
-                if y_val_inj is not None:
-                    anom_idx = np.where(y_val_inj == 1)[0]
-                    if len(anom_idx) > 0:
-                        X_anom = X_val_inj[anom_idx]
-                        y_anom = y_val_inj[anom_idx]
-                        X_train = np.vstack([X_train, X_anom])
-                        y_train = np.concatenate([y_train, y_anom])
-                        print(f"   ✅ Injeção concluída: {len(y_anom)} exemplos de ataque adicionados ao treino.")
 
             # Fit do modelo
             if hasattr(self.model, "fit"):
@@ -233,7 +232,7 @@ class Trainer:
                 if hasattr(self.model, "save"):
                     self.model.save(model_path)
                 with open(meta_path, "wb") as f:
-                    pickle.dump({'scalers': self.scalers, 'feature_columns': self.feature_columns}, f)
+                    pickle.dump({'scalers': self.scalers, 'feature_columns': self.feature_columns, 'training_protocol': 'train_val_independent_v2'}, f)
                 print(f"💾 [Trainer] Modelo e metadados salvos com sucesso em: {model_path}")
 
         # -------------------- VALIDAÇÃO (calibração de limiares) --------------------
@@ -280,7 +279,13 @@ class Trainer:
         else:
             if y_val is not None and np.sum(y_val) > 0:
                 print(f"🧠 [AUTO] Otimizando curva de decisão dinamicamente com F2-Score...")
-                for p in np.arange(50.0, 99.6, 0.5):
+                calibration_cfg = train_cfg.get("threshold_search", {})
+                percentile_min = float(calibration_cfg.get("percentile_min", 0.0))
+                percentile_max = float(calibration_cfg.get("percentile_max", 99.5))
+                percentile_step = float(calibration_cfg.get("percentile_step", 0.5))
+                if not (0 <= percentile_min < percentile_max <= 100) or percentile_step <= 0:
+                    raise ValueError("Configuração inválida em training.threshold_search.")
+                for p in np.arange(percentile_min, percentile_max + percentile_step / 2, percentile_step):
                     t_glob = np.percentile(val_scores, p)
                     if thresh_mode == "per_user":
                         u_t_dict = {
