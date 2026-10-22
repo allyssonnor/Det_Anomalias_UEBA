@@ -85,6 +85,10 @@ class MLPAutoencoder(BaseModel):
         self._set_seed()
         X = np.asarray(X).astype(np.float32)
         
+        # Keras takes validation_split from the end before applying shuffle.
+        # Shuffle deterministically so the internal holdout spans benign users and times.
+        X = X[np.random.default_rng(self.seed).permutation(len(X))]
+
         self.timesteps = X.shape[1]
         self.n_features = X.shape[2]
 
