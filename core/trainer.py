@@ -21,7 +21,7 @@ class Trainer:
         try:
             with open(meta_path, "rb") as f:
                 meta = pickle.load(f)
-            return meta.get("training_protocol") == "train_val_independent_v2"
+            return meta.get("training_protocol") == "train_val_independent_v3_benign_early_stop"
         except Exception:
             return False
 
@@ -36,6 +36,38 @@ class Trainer:
 
         self.user_thresholds = {}
         self.global_threshold = 0.0
+
+    @staticmethod
+    def _select_training_events(train_df, target="Is_Anomaly"):
+        """Return benign training events used to fit per-user feature scalers."""
+        if target not in train_df.columns:
+            return train_df.copy()
+        return train_df.loc[train_df[target] == 0].copy()
+
+    def _build_benign_training_sequences(self, train_df, feature_columns=None):
+        """Fit scalers on benign train events and keep only all-benign train windows.
+
+        Windows are built in the original event order before filtering, so removing an
+        attack cannot make events on either side appear adjacent. The model's internal
+        early-stopping split is consequently drawn only from benign training windows.
+        The external mixed validation partition remains reserved for threshold tuning.
+        """
+        target = self.config.get("data", {}).get("target_col", "Is_Anomaly")
+        benign_events = self._select_training_events(train_df, target=target)
+        for user_id, group in benign_events.groupby("UserID"):
+            self._prepare_and_scale_X(
+                group, user_id, fit=True, feature_columns=feature_columns
+            )
+
+        X_all, indices, users, labels = self._build_sequences(
+            train_df, fit=False, return_labels=True
+        )
+        if labels is not None:
+            benign_windows = labels == 0
+            X_all = X_all[benign_windows]
+            indices = indices[benign_windows]
+            users = users[benign_windows]
+        return X_all, indices, users, labels
 
     # =========================================================
     # F2-SCORE (COM PROTEÇÃO)
@@ -210,18 +242,19 @@ class Trainer:
             # O treino supervisionado usa somente rótulos da partição de treino.
             # A validação fica reservada à calibração e nunca fornece exemplos ao modelo.
             if is_supervised:
-                train_df_fit = train_df.copy()
-            elif target in train_df.columns:
-                train_df_fit = train_df[train_df[target] == 0].copy()
+                X_train, _, _, y_train = self._build_sequences(
+                    train_df, fit=True, return_labels=True,
+                    feature_columns=feature_columns
+                )
             else:
-                train_df_fit = train_df.copy()
+                X_train, _, _, y_train = self._build_benign_training_sequences(
+                    train_df, feature_columns=feature_columns
+                )
+                if y_train is not None:
+                    y_train = y_train[y_train == 0]
 
-            X_train, _, _, y_train = self._build_sequences(
-                train_df_fit,
-                fit=True,
-                return_labels=True,
-                feature_columns=feature_columns
-            )
+            if len(X_train) == 0:
+                raise ValueError("Nenhuma janela de treino elegível foi gerada para o protocolo escolhido.")
             if y_train is None:
                 y_train = np.zeros(len(X_train))
 
@@ -246,7 +279,7 @@ class Trainer:
                 if hasattr(self.model, "save"):
                     self.model.save(model_path)
                 with open(meta_path, "wb") as f:
-                    pickle.dump({'scalers': self.scalers, 'feature_columns': self.feature_columns, 'training_protocol': 'train_val_independent_v2'}, f)
+                    pickle.dump({'scalers': self.scalers, 'feature_columns': self.feature_columns, 'training_protocol': 'train_val_independent_v3_benign_early_stop'}, f)
                 print(f"💾 [Trainer] Modelo e metadados salvos com sucesso em: {model_path}")
 
         # -------------------- VALIDAÇÃO (calibração de limiares) --------------------
