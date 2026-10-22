@@ -93,6 +93,10 @@ class LSTMAutoencoder(BaseModel):
         if len(X) == 0:
             raise ValueError("Empty training data")
 
+        # Keras takes validation_split from the end before applying shuffle.
+        # Shuffle deterministically so the internal holdout spans benign users and times.
+        X = X[np.random.default_rng(self.seed).permutation(len(X))]
+
         self.timesteps = X.shape[1]
         self.n_features = X.shape[2]
 
