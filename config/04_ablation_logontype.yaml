@@ -1,6 +1,6 @@
 metadata:
   name: YAML 04 - Ablacao LogonType
-  role: compare models with and without raw and derived LogonType features
+  role: comparar dependência de LogonType com os demais parâmetros mantidos constantes
 
 settings:
   results_root: results/04_ablation_logontype
