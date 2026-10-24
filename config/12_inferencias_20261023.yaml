@@ -1,0 +1,53 @@
+metadata:
+  name: YAML 12 - Inferências de generalização e prevalência - 20261023
+  role: inferência exploratória em datasets retidos
+settings:
+  results_root: results/12_inference_20261023
+  percentiles: [99, 98, 97, 96, 95, 94, 93, 92, 91, 90]
+  sequential: true
+  resume: true
+model_groups:
+  - name: Synthetic_Core
+    root: results/02_random_vs_chrono_earlystop_v3/full
+    expected_models: 80
+    datasets:
+      - name: Synthetic_Prev_1pct
+        path: ${CONTEXTOS_ROOT}/thesis_datasets_para_inferencia/test_prev_1pct/test_prev_1pct.jsonl
+        output: results/12_inference_20261023/synthetic_prev_1pct.csv
+      - name: Synthetic_Prev_5pct
+        path: ${CONTEXTOS_ROOT}/thesis_datasets_para_inferencia/test_prev_5pct/test_prev_5pct.jsonl
+        output: results/12_inference_20261023/synthetic_prev_5pct.csv
+      - name: Synthetic_Prev_10pct
+        path: ${CONTEXTOS_ROOT}/thesis_datasets_para_inferencia/test_prev_10pct/test_prev_10pct.jsonl
+        output: results/12_inference_20261023/synthetic_prev_10pct.csv
+      - name: Synthetic_Prev_30pct
+        path: ${CONTEXTOS_ROOT}/thesis_datasets_para_inferencia/test_prev_30pct/test_prev_30pct.jsonl
+        output: results/12_inference_20261023/synthetic_prev_30pct.csv
+  - name: Synthetic_Bruteforce_Specialist
+    root: results/05_specialist_bruteforce_10seeds_20261023/full
+    expected_models: 80
+    datasets:
+      - name: Isolated_Bruteforce
+        path: ${CONTEXTOS_ROOT}/thesis_datasets_para_inferencia/test_isolated_bruteforce/test_isolated_bruteforce.jsonl
+        output: results/12_inference_20261023/synthetic_bruteforce_isolated.csv
+  - name: CERT_Like
+    root: results/10_cert_like_20261023/full
+    expected_models: 40
+    datasets:
+      - name: CERT_LOW
+        path: ${CONTEXTOS_ROOT}/CERT_LOW_para inferencia/test
+        label_filename: labels.csv
+        output: results/12_inference_20261023/cert_low.csv
+  - name: LANL_Like
+    root: results/11_lanl_like_20261023/full
+    expected_models: 40
+    datasets:
+      - name: LANL_LOW
+        path: ${CONTEXTOS_ROOT}/LANL_LOW_para_inferencia/test/test.csv
+        label_filename: gabarito.csv
+        output: results/12_inference_20261023/lanl_low.csv
+protocol_notes:
+  - inference script sweeps score percentiles [99..90] on each target dataset; each model writes 10 threshold operating-point rows.
+  - test_isolated_bruteforce is paired with the synthetic brute force specialist models.
+  - CERT_LOW and LANL_LOW are paired only with models trained on their respective CERT-Like and LANL-Like schemas.
+

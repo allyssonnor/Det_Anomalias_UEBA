@@ -1,7 +1,8 @@
-
+import os
 from sklearn.ensemble import IsolationForest
 import numpy as np
 from core.models.base_model import BaseModel
+import pickle
 
 class IsolationForestModel(BaseModel):
     """
@@ -56,3 +57,14 @@ class IsolationForestModel(BaseModel):
         # Padronização via BaseModel (invert=True para garantir a direção correta)
         return self._ensure_higher_is_anomaly(scores, invert=True)
 
+    # =====================================================
+    # SALVAR E CARREGAR MODELO
+    # =====================================================
+    def save(self, path):
+        os.makedirs(path, exist_ok=True)
+        with open(os.path.join(path, "model.pkl"), "wb") as f:
+            pickle.dump(self.model, f)
+
+    def load(self, path):
+        with open(os.path.join(path, "model.pkl"), "rb") as f:
+            self.model = pickle.load(f)

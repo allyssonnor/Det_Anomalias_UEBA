@@ -91,3 +91,4 @@ class MLPSupervisedModel(BaseModel):
         """Carrega o modelo do disco para inferência futura."""
         with open(os.path.join(path, "model.pkl"), "rb") as f:
             self.model = pickle.load(f)
+

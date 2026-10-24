@@ -383,3 +383,5 @@ class FeatureProcessor:
             df["admin_rate"] = self._rolling_rate(df, "admin_activity")
         return df
 
+
+

@@ -48,3 +48,4 @@ FEATURE_REGISTRY = {
         "attacks": ["unusual_admin"]
     }
 }
+

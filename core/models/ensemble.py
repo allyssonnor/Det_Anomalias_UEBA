@@ -1,4 +1,4 @@
-
+import pickle
 import os
 import numpy as np
 from sklearn.preprocessing import RobustScaler
@@ -88,22 +88,35 @@ class EnsembleModel(BaseModel):
             
         # Garante que a saída siga o contrato: Maior = Mais Anômalo
         return self._ensure_higher_is_anomaly(final_scores)
-
+    
     def save(self, path):
         """
-        O Ensemble delega o salvamento para os seus membros (se implementado).
+        Salva os sub-modelos e os scalers de normalização.
         """
+        os.makedirs(path, exist_ok=True)
         for i, model in enumerate(self.models):
             if hasattr(model, "save"):
                 sub_path = os.path.join(path, f"sub_model_{i}")
                 model.save(sub_path)
+                
+        # Salva os scalers do esquadrão
+        with open(os.path.join(path, "ensemble_scalers.pkl"), "wb") as f:
+            pickle.dump(self.scalers, f)
 
     def load(self, path):
         """
-        O Ensemble delega o carregamento para os seus membros (se implementado).
+        Carrega os sub-modelos e os scalers.
         """
         for i, model in enumerate(self.models):
             if hasattr(model, "load"):
                 sub_path = os.path.join(path, f"sub_model_{i}")
                 model.load(sub_path)
+                
+        # Carrega os scalers
+        scaler_file = os.path.join(path, "ensemble_scalers.pkl")
+        if os.path.exists(scaler_file):
+            with open(scaler_file, "rb") as f:
+                self.scalers = pickle.load(f)
+
+
 

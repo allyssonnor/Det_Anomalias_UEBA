@@ -70,7 +70,7 @@ class Trainer:
         return X_all, indices, users, labels
 
     # =========================================================
-    # F2-SCORE (COM PROTEÇÃO)
+    # F2-SCORE (COM PROTEÃ‡ÃƒO)
     # =========================================================
     def _compute_f2_score(self, y_true, y_pred):
         if y_true is None or len(y_true) == 0:
@@ -104,7 +104,7 @@ class Trainer:
         return thresholds
 
     # =========================================================
-    # PREPARAÇÃO E ESCALONAMENTO
+    # PREPARAÃ‡ÃƒO E ESCALONAMENTO
     # =========================================================
     def _prepare_and_scale_X(self, group, user_id, fit=False, feature_columns=None):
         if fit and feature_columns is not None:
@@ -134,7 +134,7 @@ class Trainer:
         return X_scaled
 
     # =========================================================
-    # CONSTRUÇÃO DE JANELAS (SLIDING WINDOWS)
+    # CONSTRUÃ‡ÃƒO DE JANELAS (SLIDING WINDOWS)
     # =========================================================
     def _build_sequences(self, df, fit=False, return_labels=False, feature_columns=None):
         X_all, indices_all, users_all, labels_all = [], [], [], []
@@ -168,7 +168,7 @@ class Trainer:
         )
 
     # =========================================================
-    # CÁLCULO DE SCORES (PADRONIZADO)
+    # CÃLCULO DE SCORES (PADRONIZADO)
     # =========================================================
     def _calculate_scores(self, X):
         if X is None or len(X) == 0:
@@ -191,17 +191,17 @@ class Trainer:
                 return -scores
             return scores
 
-        raise ValueError("❌ Erro: O Modelo não possui um método de escoragem válido!")
+        raise ValueError("âŒ Erro: O Modelo nÃ£o possui um mÃ©todo de escoragem vÃ¡lido!")
 
     # =========================================================
-    # MÉTODO PRINCIPAL: RUN (COM CORREÇÃO DE ÍNDICES)
+    # MÃ‰TODO PRINCIPAL: RUN (COM CORREÃ‡ÃƒO DE ÃNDICES)
     # =========================================================
     def run(self, train_df, val_df, test_df, feature_columns=None):
         """
-        Executa o treino, calibração de limiares e preparação para avaliação.
-        CORREÇÃO: reset_index(drop=True) garantido para evitar duplicatas.
+        Executa o treino, calibraÃ§Ã£o de limiares e preparaÃ§Ã£o para avaliaÃ§Ã£o.
+        CORREÃ‡ÃƒO: reset_index(drop=True) garantido para evitar duplicatas.
         """
-        # 🔥 CORREÇÃO CRÍTICA: Garante índices únicos em todos os DataFrames
+        # ðŸ”¥ CORREÃ‡ÃƒO CRÃTICA: Garante Ã­ndices Ãºnicos em todos os DataFrames
         # Resolve o erro "cannot reindex on an axis with duplicate labels"
         train_df = train_df.reset_index(drop=True)
         val_df = val_df.reset_index(drop=True)
@@ -229,7 +229,7 @@ class Trainer:
 
         # -------------------- TREINO (com checkpoint) --------------------
         if do_resume and os.path.exists(model_path) and os.path.exists(meta_path) and self._checkpoint_uses_current_protocol(meta_path):
-            print("🔄 [Trainer] Checkpoint detectado. Retomando execução...")
+            print("ðŸ”„ [Trainer] Checkpoint detectado. Retomando execuÃ§Ã£o...")
             with open(meta_path, "rb") as f:
                 meta = pickle.load(f)
                 self.scalers = meta['scalers']
@@ -237,10 +237,10 @@ class Trainer:
             if hasattr(self.model, "load"):
                 self.model.load(model_path)
         else:
-            print(f"🚀 [Trainer] Iniciando treino do zero (Modo: {thresh_mode})...")
+            print(f"ðŸš€ [Trainer] Iniciando treino do zero (Modo: {thresh_mode})...")
 
-            # O treino supervisionado usa somente rótulos da partição de treino.
-            # A validação fica reservada à calibração e nunca fornece exemplos ao modelo.
+            # O treino supervisionado usa somente rÃ³tulos da partiÃ§Ã£o de treino.
+            # A validaÃ§Ã£o fica reservada Ã  calibraÃ§Ã£o e nunca fornece exemplos ao modelo.
             if is_supervised:
                 X_train, _, _, y_train = self._build_sequences(
                     train_df, fit=True, return_labels=True,
@@ -252,18 +252,18 @@ class Trainer:
                 )
                 if y_train is not None:
                     y_train = y_train[y_train == 0]
-
             if len(X_train) == 0:
                 raise ValueError("Nenhuma janela de treino elegível foi gerada para o protocolo escolhido.")
+
             if y_train is None:
                 y_train = np.zeros(len(X_train))
 
             if is_supervised and len(np.unique(y_train)) < 2:
                 raise ValueError(
-                    "Treino supervisionado contém uma única classe. "
-                    "Não use a validação para obter positivos; forneça ataques "
-                    "na partição de treino ou retire o modelo supervisionado "
-                    "deste protocolo confirmatório."
+                    "Treino supervisionado contÃ©m uma Ãºnica classe. "
+                    "NÃ£o use a validaÃ§Ã£o para obter positivos; forneÃ§a ataques "
+                    "na partiÃ§Ã£o de treino ou retire o modelo supervisionado "
+                    "deste protocolo confirmatÃ³rio."
                 )
 
             # Fit do modelo
@@ -280,36 +280,36 @@ class Trainer:
                     self.model.save(model_path)
                 with open(meta_path, "wb") as f:
                     pickle.dump({'scalers': self.scalers, 'feature_columns': self.feature_columns, 'training_protocol': 'train_val_independent_v3_benign_early_stop'}, f)
-                print(f"💾 [Trainer] Modelo e metadados salvos com sucesso em: {model_path}")
+                print(f"ðŸ’¾ [Trainer] Modelo e metadados salvos com sucesso em: {model_path}")
 
-        # -------------------- VALIDAÇÃO (calibração de limiares) --------------------
-        print("\n--- [Trainer] Gerando Janelas de VALIDAÇÃO ---")
+        # -------------------- VALIDAÃ‡ÃƒO (calibraÃ§Ã£o de limiares) --------------------
+        print("\n--- [Trainer] Gerando Janelas de VALIDAÃ‡ÃƒO ---")
 
         # Filtro para o modo especialista (apenas normal + ataque alvo)
         if target_attack and "AnomalyType" in val_df.columns:
-            print(f"   🔍 [ESPECIALISTA] Filtrando validação para '{target_attack}'...")
+            print(f"   ðŸ” [ESPECIALISTA] Filtrando validaÃ§Ã£o para '{target_attack}'...")
             mask = (val_df[target] == 0) | (val_df["AnomalyType"] == target_attack)
             val_df = val_df[mask].copy()
 
         X_val, _, val_users, y_val = self._build_sequences(val_df, fit=False, return_labels=True)
         if X_val is None or len(X_val) == 0:
-            raise ValueError("❌ Erro Crítico: Conjunto de VALIDAÇÃO gerou 0 janelas.")
+            raise ValueError("âŒ Erro CrÃ­tico: Conjunto de VALIDAÃ‡ÃƒO gerou 0 janelas.")
 
         val_scores = self._calculate_scores(X_val)
 
         if y_val is not None and np.sum(y_val) > 0:
-            print(f"   ✅ Validação contém {int(np.sum(y_val))} janelas anômalas.")
+            print(f"   âœ… ValidaÃ§Ã£o contÃ©m {int(np.sum(y_val))} janelas anÃ´malas.")
         else:
-            print(f"   ❌ ATENÇÃO: Validação livre de anomalias registradas!")
+            print(f"   âŒ ATENÃ‡ÃƒO: ValidaÃ§Ã£o livre de anomalias registradas!")
 
         best_p, best_f2 = 95.0, -1.0
-        print("\n--- [Trainer] Definição de Limiares de Alarme ---")
+        print("\n--- [Trainer] DefiniÃ§Ã£o de Limiares de Alarme ---")
 
         # ---------- LIMIAR FIXO (Absoluto ou Percentil) ----------
         if fixed_threshold is not None:
             self.global_threshold = float(fixed_threshold)
             self.user_thresholds = {"__GLOBAL_FALLBACK__": self.global_threshold}
-            print(f"⚖️ [YAML] Limiar absoluto fixado em: {fixed_threshold}")
+            print(f"âš–ï¸ [YAML] Limiar absoluto fixado em: {fixed_threshold}")
 
         elif fixed_percentile is not None:
             best_p = float(fixed_percentile)
@@ -319,18 +319,18 @@ class Trainer:
                 self.user_thresholds.update(
                     self._personalized_thresholds(val_scores, val_users, y_val, best_p)
                 )
-            print(f"⚖️ [YAML] Percentil fixado em: {best_p}%")
+            print(f"âš–ï¸ [YAML] Percentil fixado em: {best_p}%")
 
         # ---------- LIMIAR OTIMIZADO (F2-Score) ----------
         else:
             if y_val is not None and np.sum(y_val) > 0:
-                print(f"🧠 [AUTO] Otimizando curva de decisão dinamicamente com F2-Score...")
+                print(f"ðŸ§  [AUTO] Otimizando curva de decisÃ£o dinamicamente com F2-Score...")
                 calibration_cfg = train_cfg.get("threshold_search", {})
                 percentile_min = float(calibration_cfg.get("percentile_min", 0.0))
                 percentile_max = float(calibration_cfg.get("percentile_max", 99.5))
                 percentile_step = float(calibration_cfg.get("percentile_step", 0.5))
                 if not (0 <= percentile_min < percentile_max <= 100) or percentile_step <= 0:
-                    raise ValueError("Configuração inválida em training.threshold_search.")
+                    raise ValueError("ConfiguraÃ§Ã£o invÃ¡lida em training.threshold_search.")
                 for p in np.arange(percentile_min, percentile_max + percentile_step / 2, percentile_step):
                     t_glob = np.percentile(val_scores, p)
                     if thresh_mode == "per_user":
@@ -344,10 +344,10 @@ class Trainer:
                     f2 = self._compute_f2_score(y_val, y_pred)
                     if f2 > best_f2:
                         best_f2, best_p = f2, p
-                print(f"✅ [AUTO] Otimização concluída. Percentil ideal: {best_p:.1f}% (F2-Score: {best_f2:.4f})")
+                print(f"âœ… [AUTO] OtimizaÃ§Ã£o concluÃ­da. Percentil ideal: {best_p:.1f}% (F2-Score: {best_f2:.4f})")
             else:
                 best_p = 99.0
-                print(f"⚠️ [AUTO] Validação limpa. Adotando percentil fixo de segurança: {best_p}%")
+                print(f"âš ï¸ [AUTO] ValidaÃ§Ã£o limpa. Adotando percentil fixo de seguranÃ§a: {best_p}%")
 
             self.global_threshold = float(np.percentile(val_scores, best_p)) if val_scores.size > 0 else 0.5
             self.user_thresholds = {"__GLOBAL_FALLBACK__": self.global_threshold}
@@ -360,8 +360,13 @@ class Trainer:
         with open(os.path.join(self.output_dir, "user_thresholds.json"), "w") as f:
             json.dump(self.user_thresholds, f, indent=4)
 
-        print("\n--- [Trainer] Execução Finalizada com Sucesso ---")
+        print("\n--- [Trainer] ExecuÃ§Ã£o Finalizada com Sucesso ---")
         return {
             "val_f2": float(best_f2) if best_f2 != -1 else -1.0,
             "global_threshold": self.global_threshold
         }
+
+
+
+
+
