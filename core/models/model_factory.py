@@ -54,6 +54,15 @@ def _discover_models():
 # Executa a descoberta no momento da importação
 _discover_models()
 
+# 🔥 REGISTRO MANUAL DE MODELOS ADICIONAIS (para garantir que estão disponíveis)
+try:
+    from core.models.random_forest_supervised import RandomForestSupervisedModel
+    MODEL_REGISTRY["random_forest_supervised"] = RandomForestSupervisedModel
+    logger.info("✅ RandomForestSupervisedModel registrado manualmente.")
+except ImportError as e:
+    logger.warning(f"⚠️ Não foi possível importar RandomForestSupervisedModel: {e}")
+
+# (Aqui você pode adicionar outros modelos manuais, se necessário)
 
 class ModelFactory:
     @classmethod
@@ -72,7 +81,6 @@ class ModelFactory:
         model = model_class(config)
         
         # Validação do contrato obrigatório (fit e score)
-        # Idealmente isso deveria estar na __init_subclass__ da BaseModel para evitar checagem em runtime
         required = ("fit", "score")
         missing = [m for m in required if not callable(getattr(model, m, None))]
         if missing:
