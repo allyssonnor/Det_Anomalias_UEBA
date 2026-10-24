@@ -162,3 +162,4 @@ class LSTMAutoencoder(BaseModel):
             os.path.join(path, "encoder.keras"),
             compile=False
         )
+
