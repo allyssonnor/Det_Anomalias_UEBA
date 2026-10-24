@@ -151,3 +151,10 @@ class AutoencoderModel(BaseModel):
 
         # Contrato: valores maiores significam maior anomalia
         return self._ensure_higher_is_anomaly(scores, invert=False)
+
+    def save(self, path): 
+        os.makedirs(path, exist_ok=True)
+        self.model.save(os.path.join(path, "model.keras"))
+
+    def load(self, path):
+        self.model = keras.models.load_model(os.path.join(path, "model.keras"), compile=False)
