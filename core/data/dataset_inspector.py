@@ -96,3 +96,4 @@ class DatasetInspector:
 
         print(f"{'-'*60}")
         print(f"🚀 O Esquadrão monitoriza {len(active_attacks)} tipos de ameaças.")
+
