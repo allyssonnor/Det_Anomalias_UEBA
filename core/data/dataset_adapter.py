@@ -290,3 +290,5 @@ class DatasetAdapter:
         print(f"   ✅ Val: {len(val_df) if val_df is not None else 0} registros.")
         print(f"   ✅ Teste: {len(test_df) if test_df is not None else 0} registros.")
         return train_df, val_df, test_df
+
+
