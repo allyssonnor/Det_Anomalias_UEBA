@@ -1,0 +1,63 @@
+metadata:
+  name: YAML 11 - Treino LANL-Like - 20261023
+  role: validacao exploratoria entre esquemas sinteticos
+settings:
+  results_root: results/11_lanl_like_20261023
+  cache_root: data/GLOBAL_CACHE_LANL_LIKE_20261023
+  seeds: [42, 123, 999, 1001, 1002]
+  save_checkpoints: true
+  run_mixed_eval: true
+  run_isolated_eval: false
+data:
+  dataset_path: ${CONTEXTOS_ROOT}/CERT e LANL treino/lanl/full/full.csv
+  label_filename: gabarito.csv
+  target_col: Is_Anomaly
+  time_nan_strategy: zero
+  output_dir: results/11_lanl_like_20261023/split_audits
+sampling:
+  mode: full
+  split_ratios:
+    train: 0.7
+    val: 0.2
+    test: 0.1
+datasets:
+  - name: LANL_Like_Chronological
+    overrides:
+      data.dataset_path: ${CONTEXTOS_ROOT}/CERT e LANL treino/lanl/full/full.csv
+      data.label_filename: gabarito.csv
+      data.time_nan_strategy: zero
+      sampling.split_strategy: chronological
+  - name: LANL_Like_Random
+    overrides:
+      data.dataset_path: ${CONTEXTOS_ROOT}/CERT e LANL treino/lanl/full/full.csv
+      data.label_filename: gabarito.csv
+      data.time_nan_strategy: zero
+      sampling.split_strategy: random
+model_presets:
+  - name: RandomForest
+    overrides:
+      model.type: random_forest_supervised
+      training.supervised: true
+      model.random_forest_supervised:
+        n_estimators: 200
+        max_depth: 10
+        class_weight: balanced_subsample
+  - name: MLP_Single
+    overrides:
+      model.type: mlp_single
+      training.supervised: false
+      model.mlp_single:
+        hidden_layer_sizes: [256, 128, 64]
+        max_iter: 100
+hyperparameter_grid:
+  training.threshold_mode: [global, per_user]
+  model.sequence_length: [20]
+training:
+  resume: false
+  save_model: true
+  supervised: false
+temporal:
+  session_timeout: 1800
+  min_events_session: 2
+
+
