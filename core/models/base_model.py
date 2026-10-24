@@ -112,3 +112,4 @@ class BaseModel(ABC):
             scores = -scores
 
         return scores
+
