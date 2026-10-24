@@ -1,0 +1,81 @@
+metadata:
+  name: YAML 02 - Random vs Chronological - 10 seeds
+  role: comparacao estatistica exigida pelo estudo
+settings:
+  results_root: results/02_random_vs_chrono_earlystop_v3
+  cache_root: data/GLOBAL_CACHE_DETECTOR_earlystop_v3
+  seeds:
+  - 42
+  - 123
+  - 999
+  - 1001
+  - 1002
+  - 1003
+  - 1004
+  - 1005
+  - 1006
+  - 1007
+  save_checkpoints: true
+  run_mixed_eval: true
+  run_isolated_eval: false
+datasets:
+- name: Synthetic_Chronological
+  overrides:
+    sampling.split_strategy: chronological
+    features.enabled_groups: &id001
+    - auth_failure
+    - volume_anomaly
+    - temporal_anomaly
+    - lateral_movement
+    - rdp_anomaly
+    - golden_ticket
+    - process_anomaly
+    - privilege_anomaly
+- name: Synthetic_Random
+  overrides:
+    sampling.split_strategy: random
+    features.enabled_groups: *id001
+model_presets:
+- name: RandomForest
+  overrides:
+    model.type: random_forest_supervised
+    training.supervised: true
+    model.random_forest_supervised:
+      n_estimators: 150
+      max_depth: 8
+      class_weight: balanced_subsample
+      n_jobs: 1
+- name: MLP_Single
+  overrides:
+    model.type: mlp_single
+    training.supervised: false
+    model.mlp_single:
+      hidden_layer_sizes:
+      - 64
+      - 32
+      max_iter: 100
+      early_stopping: true
+      validation_fraction: 0.1
+hyperparameter_grid:
+  training.threshold_mode:
+  - global
+  - per_user
+  model.sequence_length:
+  - 20
+data:
+  dataset_path: data/seed_1.jsonl
+  target_col: Is_Anomaly
+  time_nan_strategy: nan
+sampling:
+  mode: full
+  split_ratios:
+    train: 0.7
+    val: 0.2
+    test: 0.1
+training:
+  resume: false
+  save_model: true
+temporal:
+  session_timeout: 1800
+  min_events_session: 2
+
