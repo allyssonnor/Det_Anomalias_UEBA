@@ -135,3 +135,4 @@ class MLPAutoencoder(BaseModel):
         self.model = keras.models.load_model(os.path.join(path, "model.keras"), compile=False)
         self.encoder = keras.models.load_model(os.path.join(path, "encoder.keras"), compile=False)
 
+
