@@ -48,3 +48,4 @@ class TemporalBuilder:
         print(f"   ✅ Sessões identificadas. Total de sessões únicas: {df_temp['session_id'].nunique()}")
 
         return df_temp
+
