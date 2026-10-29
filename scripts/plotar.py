@@ -166,7 +166,7 @@ def _plot_confusion_matrices(df, summary, output_path):
         ax.set_xlabel("Classe predita")
         ax.set_ylabel("Classe real")
         ax.set_title(
-            f"{row['split']} · {row['model_preset']}\n"
+            f"{row['scenario']} · {row['split']} · {row['model_preset']}\n"
             f"limiar {row['training.threshold_mode']} · "
             f"janela {row['model.sequence_length']}\n"
             f"contagens de {row['n_seeds']} semente(s)",
@@ -192,7 +192,8 @@ def _short_label(row):
     )
     model = "RF" if "forest" in str(row["model_preset"]).casefold() else str(row["model_preset"])
     threshold = "global" if str(row["training.threshold_mode"]).casefold() == "global" else "per_user"
-    return f"{split}\n{model}\n{threshold}"
+    scenario = "BF" if row["scenario"] == "Brute force" else "Geral"
+    return f"{scenario} · {split}\n{model}\n{threshold}"
 
 
 def _plot_metrics(summary, metric_columns, output_path):
