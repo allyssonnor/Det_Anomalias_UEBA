@@ -39,31 +39,40 @@ def _split_label(dataset):
     return str(dataset)
 
 
-def _load_results(root, csv_path=None):
-    if csv_path:
-        paths = [Path(csv_path)]
+def _load_results(root, csv_path=None, source="training"):
+    if source == "inference":
+        paths = sorted(Path(root).rglob("classification_report.json"))
+        if not paths:
+            raise FileNotFoundError(
+                f"Nenhum classification_report.json encontrado em {root!s}. "
+                "Execute primeiro a célula de inferência."
+            )
+        frames = [pd.read_json(path, typ="series").to_frame().T for path in paths]
+        df = pd.concat(frames, ignore_index=True)
     else:
-        root_path = Path(root)
-        paths = sorted(root_path.rglob("master_results_table.csv"))
-    if not paths:
-        raise FileNotFoundError(
-            f"Nenhum master_results_table.csv encontrado em {root!s}."
-        )
+        if csv_path:
+            paths = [Path(csv_path)]
+        else:
+            paths = sorted(Path(root).rglob("master_results_table.csv"))
+        if not paths:
+            raise FileNotFoundError(
+                f"Nenhum master_results_table.csv encontrado em {root!s}."
+            )
 
-    frames = []
-    for path in paths:
-        if not path.is_file():
-            raise FileNotFoundError(f"CSV não encontrado: {path}")
-        frames.append(pd.read_csv(path))
-    df = pd.concat(frames, ignore_index=True)
+        frames = []
+        for path in paths:
+            if not path.is_file():
+                raise FileNotFoundError(f"CSV não encontrado: {path}")
+            frames.append(pd.read_csv(path))
+        df = pd.concat(frames, ignore_index=True)
 
     aliases = {
         "threshold_mode": "training.threshold_mode",
         "sequence_length": "model.sequence_length",
     }
-    for source, target in aliases.items():
-        if target not in df.columns and source in df.columns:
-            df.rename(columns={source: target}, inplace=True)
+    for old_name, new_name in aliases.items():
+        if new_name not in df.columns and old_name in df.columns:
+            df.rename(columns={old_name: new_name}, inplace=True)
 
     missing = [
         column for column in GROUP_COLUMNS + CONFUSION_COLUMNS + ["seed"]
@@ -155,7 +164,7 @@ def _plot_confusion_matrices(df, summary, output_path):
             f"{row['split']} · {row['model_preset']}\n"
             f"limiar {row['training.threshold_mode']} · "
             f"janela {row['model.sequence_length']}\n"
-            f"matriz somada em {row['n_seeds']} sementes",
+            f"contagens de {row['n_seeds']} semente(s)",
             fontsize=10,
         )
 
@@ -228,18 +237,20 @@ def _plot_metrics(summary, metric_columns, output_path):
     axes[-1].set_xticks(x)
     axes[-1].set_xticklabels(labels, fontsize=9)
     axes[-1].set_xlabel("Partição · modelo · modo de limiar")
-    fig.suptitle(
-        "Demo da banca — métricas médias no teste (barras: desvio-padrão entre sementes)",
-        fontsize=15,
-        fontweight="bold",
+    one_seed = summary["n_seeds"].max() == 1
+    title = (
+        "Demo da banca — métricas da inferência (uma semente)"
+        if one_seed
+        else "Demo da banca — médias no teste (barras: desvio-padrão entre sementes)"
     )
+    fig.suptitle(title, fontsize=15, fontweight="bold")
     fig.tight_layout(rect=[0, 0, 1, 0.97])
     fig.savefig(output_path, dpi=220, bbox_inches="tight")
     plt.close(fig)
 
 
-def generate_demo_plots(root, output_dir, csv_path=None):
-    df = _load_results(root, csv_path)
+def generate_demo_plots(root, output_dir, csv_path=None, source="training"):
+    df = _load_results(root, csv_path, source=source)
     summary, metric_columns = _summarize(df)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -277,5 +288,11 @@ if __name__ == "__main__":
         default="results/demo_banca",
         help="Pasta para salvar os gráficos e o resumo CSV.",
     )
+    parser.add_argument(
+        "--source",
+        choices=["training", "inference"],
+        default="training",
+        help="Fonte: CSVs do treinamento ou relatórios da inferência pré-computada.",
+    )
     args = parser.parse_args()
-    generate_demo_plots(args.root, args.out_dir, args.csv)
+    generate_demo_plots(args.root, args.out_dir, args.csv, args.source)
