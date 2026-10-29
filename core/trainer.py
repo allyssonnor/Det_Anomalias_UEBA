@@ -69,6 +69,71 @@ class Trainer:
             users = users[benign_windows]
         return X_all, indices, users, labels
 
+    def _build_attack_specific_sequences(
+        self, df, attack_type, fit=False, feature_columns=None,
+        require_positive=False
+    ):
+        """Build chronological windows for one attack type.
+
+        Windows containing other anomaly types are excluded instead of being
+        relabeled as benign. Rows stay in their original order, so filtering
+        does not create artificial adjacency between events.
+        """
+        target = self.config.get("data", {}).get("target_col", "Is_Anomaly")
+        if target not in df.columns:
+            raise ValueError(f"Coluna de rótulo '{target}' ausente para o modo especialista.")
+        if "AnomalyType" not in df.columns:
+            raise ValueError(
+                "target_attack_type foi definido, mas a coluna 'AnomalyType' não existe."
+            )
+
+        target_name = str(attack_type).strip().casefold()
+        attack_names = df["AnomalyType"].astype("string").str.strip().str.casefold()
+        is_anomaly = pd.to_numeric(df[target], errors="coerce").fillna(0).eq(1)
+        target_events = is_anomaly & attack_names.eq(target_name)
+        other_attack_events = is_anomaly & ~target_events
+
+        if require_positive and not target_events.any():
+            raise ValueError(
+                f"Nenhum evento do ataque alvo '{attack_type}' foi encontrado no treino."
+            )
+
+        target_df = df.copy()
+        target_df[target] = target_events.to_numpy(dtype=np.int8)
+        X, indices, users, labels = self._build_sequences(
+            target_df, fit=fit, return_labels=True,
+            feature_columns=feature_columns
+        )
+
+        other_df = df.copy()
+        other_df[target] = other_attack_events.to_numpy(dtype=np.int8)
+        _, _, _, other_labels = self._build_sequences(
+            other_df, fit=False, return_labels=True,
+            feature_columns=feature_columns
+        )
+
+        if labels is None or other_labels is None or len(labels) != len(other_labels):
+            raise ValueError(
+                f"Não foi possível construir janelas rotuladas para o ataque '{attack_type}'."
+            )
+
+        eligible = other_labels == 0
+        X, indices, users, labels = (
+            X[eligible], indices[eligible], users[eligible], labels[eligible]
+        )
+        positive_windows = int(np.sum(labels == 1))
+        print(
+            f"   🔎 [ESPECIALISTA] {attack_type}: "
+            f"{int(target_events.sum())} eventos alvo, "
+            f"{positive_windows} janelas positivas elegíveis."
+        )
+        if require_positive and positive_windows == 0:
+            raise ValueError(
+                f"Nenhuma janela elegível do ataque '{attack_type}' restou após "
+                "excluir janelas contaminadas por outros ataques."
+            )
+        return X, indices, users, labels
+
     # =========================================================
     # F2-SCORE (COM PROTEÃ‡ÃƒO)
     # =========================================================
@@ -241,7 +306,12 @@ class Trainer:
 
             # O treino supervisionado usa somente rÃ³tulos da partiÃ§Ã£o de treino.
             # A validaÃ§Ã£o fica reservada Ã  calibraÃ§Ã£o e nunca fornece exemplos ao modelo.
-            if is_supervised:
+            if is_supervised and target_attack:
+                X_train, _, _, y_train = self._build_attack_specific_sequences(
+                    train_df, target_attack, fit=True,
+                    feature_columns=feature_columns, require_positive=True
+                )
+            elif is_supervised:
                 X_train, _, _, y_train = self._build_sequences(
                     train_df, fit=True, return_labels=True,
                     feature_columns=feature_columns
@@ -285,13 +355,14 @@ class Trainer:
         # -------------------- VALIDAÃ‡ÃƒO (calibraÃ§Ã£o de limiares) --------------------
         print("\n--- [Trainer] Gerando Janelas de VALIDAÃ‡ÃƒO ---")
 
-        # Filtro para o modo especialista (apenas normal + ataque alvo)
-        if target_attack and "AnomalyType" in val_df.columns:
-            print(f"   ðŸ” [ESPECIALISTA] Filtrando validaÃ§Ã£o para '{target_attack}'...")
-            mask = (val_df[target] == 0) | (val_df["AnomalyType"] == target_attack)
-            val_df = val_df[mask].copy()
-
-        X_val, _, val_users, y_val = self._build_sequences(val_df, fit=False, return_labels=True)
+        if target_attack:
+            X_val, _, val_users, y_val = self._build_attack_specific_sequences(
+                val_df, target_attack, fit=False
+            )
+        else:
+            X_val, _, val_users, y_val = self._build_sequences(
+                val_df, fit=False, return_labels=True
+            )
         if X_val is None or len(X_val) == 0:
             raise ValueError("âŒ Erro CrÃ­tico: Conjunto de VALIDAÃ‡ÃƒO gerou 0 janelas.")
 
