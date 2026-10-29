@@ -1,98 +1,281 @@
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Gera matrizes de confusão e resumo de métricas da execução da demo."""
+
 import argparse
-import os
-from math import pi
+import math
+from pathlib import Path
 
-def plot_master_dashboard(csv_path, output_path="results/dashboard_banca.png"):
-    df = pd.read_csv(csv_path)
-    
-    if 'model.sequence_length' not in df.columns and 'sequence_length' in df.columns:
-        df.rename(columns={'sequence_length': 'model.sequence_length'}, inplace=True)
-    if 'training.threshold_mode' not in df.columns and 'threshold_mode' in df.columns:
-        df.rename(columns={'threshold_mode': 'training.threshold_mode'}, inplace=True)
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
 
-    # Busca especificamente a avaliação isolada do bruteforce
-    df_bruteforce = df[df['dataset'] == 'test_bruteforce']
-    if not df_bruteforce.empty:
-        modelo_alvo = df_bruteforce.iloc[0]
+
+GROUP_COLUMNS = [
+    "dataset",
+    "model_preset",
+    "training.threshold_mode",
+    "model.sequence_length",
+]
+CONFUSION_COLUMNS = ["tn", "fp", "fn", "tp"]
+METRIC_LABELS = {
+    "precision": "Precisão",
+    "recall": "Recall",
+    "f1_score": "F1",
+    "pr_auc": "PR-AUC",
+    "roc_auc": "ROC-AUC",
+    "prevalence": "Prevalência",
+    "lift_pr": "Lift PR",
+}
+
+
+def _split_label(dataset):
+    value = str(dataset).casefold()
+    if "chronological" in value or "chrono" in value:
+        return "Cronológico"
+    if "random" in value:
+        return "Aleatório"
+    return str(dataset)
+
+
+def _load_results(root, csv_path=None):
+    if csv_path:
+        paths = [Path(csv_path)]
     else:
-        # Fallback caso não encontre
-        modelo_alvo = df.iloc[-1] 
+        root_path = Path(root)
+        paths = sorted(root_path.rglob("master_results_table.csv"))
+    if not paths:
+        raise FileNotFoundError(
+            f"Nenhum master_results_table.csv encontrado em {root!s}."
+        )
 
-    plt.style.use('seaborn-v0_8-whitegrid' if 'seaborn-v0_8-whitegrid' in plt.style.available else 'default')
-    fig = plt.figure(figsize=(18, 12))
-    fig.suptitle(f"Avaliação do Especialista - {modelo_alvo.get('model_preset', 'Modelo')} (Ataque: {modelo_alvo.get('dataset', 'N/A')})", fontsize=20, fontweight='bold', y=0.98)
+    frames = []
+    for path in paths:
+        if not path.is_file():
+            raise FileNotFoundError(f"CSV não encontrado: {path}")
+        frames.append(pd.read_csv(path))
+    df = pd.concat(frames, ignore_index=True)
 
-    cores = {'F1': '#1f77b4', 'Recall': '#2ca02c', 'Precision': '#ff7f0e', 'ROC-AUC': '#9467bd', 'PR-AUC': '#17becf'}
+    aliases = {
+        "threshold_mode": "training.threshold_mode",
+        "sequence_length": "model.sequence_length",
+    }
+    for source, target in aliases.items():
+        if target not in df.columns and source in df.columns:
+            df.rename(columns={source: target}, inplace=True)
 
-    # 1. Matriz de Confusão
-    ax1 = fig.add_subplot(231)
-    cm = np.array([[modelo_alvo.get('tn', 0), modelo_alvo.get('fp', 0)], 
-                   [modelo_alvo.get('fn', 0), modelo_alvo.get('tp', 0)]])
-    
-    sns.heatmap(cm, annot=True, fmt='.0f', cmap='Blues', ax=ax1, 
-                xticklabels=['Normal (Pred)', 'Anomalia (Pred)'], 
-                yticklabels=['Normal (Real)', 'Anomalia (Real)'],
-                annot_kws={"size": 14, "weight": "bold"})
-    ax1.set_title('1. Matriz de Confusão', fontsize=14, fontweight='bold')
+    missing = [
+        column for column in GROUP_COLUMNS + CONFUSION_COLUMNS + ["seed"]
+        if column not in df.columns
+    ]
+    if missing:
+        raise ValueError(
+            "Os resultados não têm as colunas necessárias para o resumo: "
+            + ", ".join(missing)
+        )
+    return df
 
-    # 2. AUCs
-    ax2 = fig.add_subplot(232)
-    metricas_auc = ['PR-AUC', 'ROC-AUC']
-    valores_auc = [modelo_alvo.get('pr_auc', 0), modelo_alvo.get('roc_auc', 0)]
-    
-    sns.barplot(x=metricas_auc, y=valores_auc, hue=metricas_auc, palette=[cores['PR-AUC'], cores['ROC-AUC']], legend=False, ax=ax2)
-    for i, v in enumerate(valores_auc):
-        ax2.text(i, v + 0.02, f"{v:.4f}", ha='center', va='bottom', fontweight='bold', fontsize=12)
-    ax2.set_title('2. Poder de Discriminação (AUCs)', fontsize=14, fontweight='bold')
-    ax2.set_ylim(0, 1.1)
 
-    # 3. Radar
-    ax3 = fig.add_subplot(233, polar=True)
-    categorias = ['Precision', 'Recall', 'F1-Score', 'PR-AUC', 'ROC-AUC']
-    valores = [modelo_alvo.get('precision', 0), modelo_alvo.get('recall', 0), modelo_alvo.get('f1_score', 0), modelo_alvo.get('pr_auc', 0), modelo_alvo.get('roc_auc', 0)]
-    valores += [valores[0]]
-    angulos = [n / float(len(categorias)) * 2 * pi for n in range(len(categorias))]
-    angulos += [angulos[0]]
-    ax3.plot(angulos, valores, color='#8c564b', linewidth=2, linestyle='solid')
-    ax3.fill(angulos, valores, color='#8c564b', alpha=0.25)
-    ax3.set_xticks(angulos[:-1])
-    ax3.set_xticklabels(categorias, fontsize=11, fontweight='bold')
-    ax3.set_yticks([0.2, 0.4, 0.6, 0.8, 1.0])
-    ax3.set_yticklabels(['0.2', '0.4', '0.6', '0.8', '1.0'], color="grey", size=9)
-    ax3.set_ylim(0, 1)
-    ax3.set_title('3. Perfil Geral de Desempenho', fontsize=14, fontweight='bold', pad=20)
+def _summarize(df):
+    metric_columns = [
+        metric for metric in METRIC_LABELS if metric in df.columns
+    ]
+    required_metrics = ["precision", "recall", "f1_score", "pr_auc", "roc_auc"]
+    missing_metrics = [metric for metric in required_metrics if metric not in metric_columns]
+    if missing_metrics:
+        raise ValueError(
+            "Métricas ausentes nos resultados: " + ", ".join(missing_metrics)
+        )
 
-    # 4. Barras
-    ax4 = fig.add_subplot(212)
-    metricas_base = ['Precision', 'Recall', 'F1-Score']
-    valores_base = [modelo_alvo.get('precision', 0), modelo_alvo.get('recall', 0), modelo_alvo.get('f1_score', 0)]
-    
-    sns.barplot(x=metricas_base, y=valores_base, hue=metricas_base, palette=[cores['Precision'], cores['Recall'], cores['F1']], legend=False, ax=ax4)
-    for i, v in enumerate(valores_base):
-        ax4.text(i, v + 0.02, f"{v:.4f}", ha='center', va='bottom', fontweight='bold', fontsize=14)
-        
-    # Verifica se é o modelo supervisionado para colocar o título adequado
-    if "Supervised" in str(modelo_alvo.get('model_preset', '')):
-        texto_limiar = "0.5 (Probabilidade Absoluta)"
-    else:
-        texto_limiar = modelo_alvo.get('training.threshold_mode', 'N/A')
+    summary_rows = []
+    grouped = df.groupby(GROUP_COLUMNS, dropna=False, sort=False)
+    for keys, group in grouped:
+        row = dict(zip(GROUP_COLUMNS, keys))
+        row["split"] = _split_label(row["dataset"])
+        row["n_runs"] = int(len(group))
+        row["n_seeds"] = int(group["seed"].nunique())
+        for metric in metric_columns:
+            values = pd.to_numeric(group[metric], errors="coerce").dropna()
+            row[f"{metric}_mean"] = float(values.mean()) if len(values) else np.nan
+            row[f"{metric}_std"] = (
+                float(values.std(ddof=1)) if len(values) > 1 else 0.0
+            )
+        summary_rows.append(row)
 
-    ax4.set_title(f"4. Visão Detalhada (Limiar: {texto_limiar})", fontsize=14, fontweight='bold')
-    ax4.set_ylim(0, 1.1)
+    summary = pd.DataFrame(summary_rows)
+    split_order = {"Cronológico": 0, "Aleatório": 1}
+    summary["_split_order"] = summary["split"].map(split_order).fillna(2)
+    summary.sort_values(
+        ["_split_order", "model_preset", "training.threshold_mode", "model.sequence_length"],
+        inplace=True,
+    )
+    summary.drop(columns="_split_order", inplace=True)
+    summary.reset_index(drop=True, inplace=True)
+    return summary, metric_columns
 
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
-    plt.savefig(output_path, dpi=300)
-    print(f"✅ Dashboard gerado com sucesso: {output_path}")
+
+def _plot_confusion_matrices(df, summary, output_path):
+    count = len(summary)
+    if count == 0:
+        raise ValueError("Nenhuma combinação de modelo e protocolo para plotar.")
+    columns = min(4, count)
+    rows = math.ceil(count / columns)
+    fig, axes = plt.subplots(rows, columns, figsize=(5.3 * columns, 4.7 * rows))
+    axes = np.atleast_1d(axes).ravel()
+
+    for index, row in summary.iterrows():
+        subset = df
+        for column in GROUP_COLUMNS:
+            subset = subset[subset[column].astype(str) == str(row[column])]
+        totals = {
+            column: int(pd.to_numeric(subset[column], errors="coerce").fillna(0).sum())
+            for column in CONFUSION_COLUMNS
+        }
+        matrix = np.array([
+            [totals["tn"], totals["fp"]],
+            [totals["fn"], totals["tp"]],
+        ])
+        ax = axes[index]
+        sns.heatmap(
+            matrix,
+            annot=True,
+            fmt="d",
+            cmap="Blues",
+            cbar=False,
+            square=True,
+            ax=ax,
+            xticklabels=["Normal", "Anomalia"],
+            yticklabels=["Normal", "Anomalia"],
+            annot_kws={"size": 12, "weight": "bold"},
+        )
+        ax.set_xlabel("Classe predita")
+        ax.set_ylabel("Classe real")
+        ax.set_title(
+            f"{row['split']} · {row['model_preset']}\n"
+            f"limiar {row['training.threshold_mode']} · "
+            f"janela {row['model.sequence_length']}\n"
+            f"matriz somada em {row['n_seeds']} sementes",
+            fontsize=10,
+        )
+
+    for ax in axes[count:]:
+        ax.set_visible(False)
+
+    fig.suptitle(
+        "Demo da banca — matrizes de confusão no teste",
+        fontsize=16,
+        fontweight="bold",
+    )
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    fig.savefig(output_path, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _short_label(row):
+    split = "Crono" if row["split"] == "Cronológico" else (
+        "Rand" if row["split"] == "Aleatório" else row["split"]
+    )
+    model = "RF" if "forest" in str(row["model_preset"]).casefold() else str(row["model_preset"])
+    threshold = "global" if str(row["training.threshold_mode"]).casefold() == "global" else "per_user"
+    return f"{split}\n{model}\n{threshold}"
+
+
+def _plot_metrics(summary, metric_columns, output_path):
+    plot_metrics = [
+        metric for metric in
+        ["precision", "recall", "f1_score", "pr_auc", "roc_auc", "prevalence", "lift_pr"]
+        if metric in metric_columns
+    ]
+    labels = [_short_label(row) for _, row in summary.iterrows()]
+    x = np.arange(len(summary))
+    fig, axes = plt.subplots(
+        len(plot_metrics),
+        1,
+        figsize=(max(16, 2.3 * len(summary)), 2.8 * len(plot_metrics)),
+        sharex=True,
+    )
+    axes = np.atleast_1d(axes).ravel()
+
+    for ax, metric in zip(axes, plot_metrics):
+        means = pd.to_numeric(summary[f"{metric}_mean"], errors="coerce").to_numpy()
+        errors = pd.to_numeric(summary[f"{metric}_std"], errors="coerce").fillna(0).to_numpy()
+        ax.errorbar(
+            x,
+            means,
+            yerr=errors,
+            fmt="o",
+            color="#1f77b4",
+            ecolor="#7f7f7f",
+            capsize=4,
+            markersize=6,
+        )
+        ax.set_ylabel(METRIC_LABELS.get(metric, metric))
+        ax.grid(axis="y", alpha=0.25)
+        if metric != "lift_pr":
+            ax.set_ylim(0, 1.08)
+        for xpos, mean, error in zip(x, means, errors):
+            label = f"{mean:.3f}" if np.isfinite(mean) else "n/d"
+            ax.annotate(
+                label,
+                (xpos, mean + error if np.isfinite(mean) else 0),
+                xytext=(0, 5),
+                textcoords="offset points",
+                ha="center",
+                fontsize=8,
+            )
+
+    axes[-1].set_xticks(x)
+    axes[-1].set_xticklabels(labels, fontsize=9)
+    axes[-1].set_xlabel("Partição · modelo · modo de limiar")
+    fig.suptitle(
+        "Demo da banca — métricas médias no teste (barras: desvio-padrão entre sementes)",
+        fontsize=15,
+        fontweight="bold",
+    )
+    fig.tight_layout(rect=[0, 0, 1, 0.97])
+    fig.savefig(output_path, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
+def generate_demo_plots(root, output_dir, csv_path=None):
+    df = _load_results(root, csv_path)
+    summary, metric_columns = _summarize(df)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    confusion_path = output_dir / "matrizes_confusao_demo.png"
+    metrics_path = output_dir / "metricas_demo.png"
+    summary_path = output_dir / "resumo_metricas_demo.csv"
+
+    _plot_confusion_matrices(df, summary, confusion_path)
+    _plot_metrics(summary, metric_columns, metrics_path)
+    summary.to_csv(summary_path, index=False)
+    print(f"Execuções agregadas: {len(df)}")
+    print(f"Combinações avaliadas: {len(summary)}")
+    print(f"Matrizes de confusão: {confusion_path}")
+    print(f"Gráficos de métricas: {metrics_path}")
+    print(f"Resumo por combinação: {summary_path}")
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Plota dashboard para a banca.")
-    parser.add_argument("--csv", type=str, required=True, help="Caminho para o csv gerado pelo detectar.")
-    parser.add_argument("--save_path", type=str, default="results/dashboard_banca.png")
+    parser = argparse.ArgumentParser(
+        description="Gera gráficos agregados dos resultados da demo da banca."
+    )
+    parser.add_argument(
+        "--root",
+        default="results/demo_banca/full",
+        help="Pasta onde estão os resultados por semente.",
+    )
+    parser.add_argument(
+        "--csv",
+        default=None,
+        help="CSV de resultados único; se omitido, busca os CSVs sob --root.",
+    )
+    parser.add_argument(
+        "--out_dir",
+        default="results/demo_banca",
+        help="Pasta para salvar os gráficos e o resumo CSV.",
+    )
     args = parser.parse_args()
-
-    plot_master_dashboard(args.csv, output_path=args.save_path)
+    generate_demo_plots(args.root, args.out_dir, args.csv)
