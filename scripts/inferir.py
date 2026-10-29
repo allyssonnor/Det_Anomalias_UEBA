@@ -6,6 +6,8 @@ Carrega o modelo salvo, restaura os metadados e limiares, aplica o pipeline ofic
 e gera o dashboard de resultados sem vazamento de dados.
 """
 import os
+import shutil
+import copy
 # Supressão de logs incômodos do TensorFlow/CUDA
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
@@ -25,6 +27,7 @@ import torch
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import classification_report, precision_recall_curve, auc, roc_auc_score, confusion_matrix
+from scripts.evaluate_performance import run_external_evaluation
 
 from core.data.dataset_adapter import DatasetAdapter
 from core.features.feature_processor import FeatureProcessor
@@ -179,6 +182,13 @@ def rodar_inferencia(
             allow_pickle=True,
         )
         y_test = np.load(os.path.join(cached_test_dir, cache_files["y_test"]))
+        cached_split_dir = os.path.dirname(os.path.normpath(cached_test_dir))
+        test_df_path = os.path.join(cached_split_dir, "t_test.parquet")
+        if not os.path.isfile(test_df_path):
+            raise FileNotFoundError(
+                "O dataframe oficial do teste não foi encontrado: " + test_df_path
+            )
+        test_df = pd.read_parquet(test_df_path)
     else:
         print(f"🎯 Processando dataset alvo: {dataset_novo_path}")
         config_infer = config.copy()
@@ -226,46 +236,59 @@ def rodar_inferencia(
 
     thresh_mode = config.get("training", {}).get("threshold_mode", "per_user")
     thresholds_aplicados = np.array([
-        trainer.user_thresholds.get(str(u), trainer.global_threshold) if thresh_mode == "per_user" and str(u) != "__GLOBAL_FALLBACK__" else trainer.global_threshold 
+        trainer.user_thresholds.get(str(u), trainer.global_threshold)
+        if thresh_mode == "per_user" and str(u) != "__GLOBAL_FALLBACK__"
+        else trainer.global_threshold
         for u in users_test
     ])
-    
     y_pred = (scores > thresholds_aplicados).astype(int)
-    
-    if y_test is not None:
-        precision_curve, recall_curve, _ = precision_recall_curve(y_test, scores)
-        pr_auc = auc(recall_curve, precision_curve) if len(np.unique(y_test)) > 1 else 0.0
-        try:
-            roc_auc = roc_auc_score(y_test, scores)
-        except ValueError:
-            roc_auc = 0.5 
 
-        tn, fp, fn, tp = confusion_matrix(y_test, y_pred, labels=[0, 1]).ravel() if len(y_test) > 0 else (0, 0, 0, 0)
-        report_dict = classification_report(y_test, y_pred, output_dict=True, zero_division=0)
-        class_1 = report_dict.get("1", report_dict.get("1.0", report_dict.get("True", {})))
+    if y_test is None:
+        raise ValueError("O conjunto de teste não contém rótulos para calcular métricas.")
+    if len(y_test) != len(scores):
+        raise ValueError(
+            f"Teste desalinhado: {len(y_test)} rótulos para {len(scores)} escores."
+        )
 
-        print("\n" + "="*60)
-        print("📊 RESULTADOS DA INFERÊNCIA PURA (Zero VAZAMENTO)")
-        print("="*60)
-        print(f" 🔹 Janelas Avaliadas            : {len(y_test)}")
-        print(f" 🔹 Anomalias Reais (Gabarito)   : {int(np.sum(y_test))}")
-        print(f" 🔹 Alertas Disparados           : {int(np.sum(y_pred))}")
-        print("-" * 60)
-        print(f" ✅ Verdadeiros Positivos (TP) : {int(tp)}")
-        print(f" ⚠️  Falsos Positivos (FP)     : {int(fp)}")
-        print(f" ❌ Falsos Negativos (FN)     : {int(fn)}")
-        print(f" 🛡️  Verdadeiros Negativos (TN) : {int(tn)}")
-        print("-" * 60)
-        print(f" 🎯 Precision                  : {class_1.get('precision', 0.0):.4f}")
-        print(f" 🎯 Recall                     : {class_1.get('recall', 0.0):.4f}")
-        print(f" 🎯 F1-Score                   : {class_1.get('f1-score', 0.0):.4f}")
-        print(f" 🎯 PR-AUC                     : {pr_auc:.4f}")
-        print(f" 🎯 ROC-AUC                    : {roc_auc:.4f}")
-        print("="*60 + "\n")
-
-    # Salva cada inferência no diretório do respectivo artefato.
+    # Usa a mesma rotina e a mesma apresentação textual do treinamento da tese.
     inference_output_dir = inference_output_dir or os.path.join(output_dir, "inference_demo")
     os.makedirs(inference_output_dir, exist_ok=True)
+    shutil.copy2(
+        thresholds_path,
+        os.path.join(inference_output_dir, "user_thresholds.json"),
+    )
+    evaluation_config = copy.deepcopy(config)
+    evaluation_config["output_dir"] = inference_output_dir
+    official_metrics = run_external_evaluation(
+        evaluation_config,
+        test_df=test_df,
+        scores=scores,
+        indices=indices_test,
+        verbose=True,
+    )
+
+    tn = int(official_metrics["tn"])
+    fp = int(official_metrics["fp"])
+    fn = int(official_metrics["fn"])
+    tp = int(official_metrics["tp"])
+    expected_cm = confusion_matrix(y_test, y_pred, labels=[0, 1])
+    official_cm = np.array([[tn, fp], [fn, tp]])
+    if not np.array_equal(expected_cm, official_cm):
+        raise ValueError(
+            "A avaliação oficial e as janelas cacheadas produziram matrizes "
+            "de confusão diferentes. Verifique se os caches pertencem ao dataset "
+            "e à execução dos modelos."
+        )
+
+    pr_auc = float(official_metrics["pr_auc"])
+    roc_auc = float(official_metrics["roc_auc"])
+    class_1 = {
+        "precision": float(official_metrics["precision"]),
+        "recall": float(official_metrics["recall"]),
+        "f1-score": float(official_metrics["f1_score"]),
+    }
+
+    # Salva cada inferência no diretório do respectivo artefato.
     if test_df is not None:
         df_resultado = test_df.loc[indices_test].copy().reset_index(drop=True)
         df_resultado["anomaly_score"] = scores
@@ -303,17 +326,17 @@ def rodar_inferencia(
             "n_test_sequences": int(len(y_test)),
             "n_positive": int(np.sum(y_test)),
             "n_alerts": int(np.sum(y_pred)),
-            "precision": float(class_1.get("precision", 0.0)),
-            "recall": float(class_1.get("recall", 0.0)),
-            "f1_score": float(class_1.get("f1-score", 0.0)),
-            "pr_auc": float(pr_auc),
-            "roc_auc": float(roc_auc),
-            "prevalence": prevalence,
-            "lift_pr": float(pr_auc / prevalence) if prevalence > 0 else 0.0,
-            "tn": int(tn),
-            "fp": int(fp),
-            "fn": int(fn),
-            "tp": int(tp),
+            "precision": float(official_metrics["precision"]),
+            "recall": float(official_metrics["recall"]),
+            "f1_score": float(official_metrics["f1_score"]),
+            "pr_auc": float(official_metrics["pr_auc"]),
+            "roc_auc": float(official_metrics["roc_auc"]),
+            "prevalence": float(official_metrics["prevalence"]),
+            "lift_pr": float(official_metrics["lift_pr"]),
+            "tn": int(official_metrics["tn"]),
+            "fp": int(official_metrics["fp"]),
+            "fn": int(official_metrics["fn"]),
+            "tp": int(official_metrics["tp"]),
         }
         with open(
             os.path.join(inference_output_dir, "classification_report.json"),
@@ -344,11 +367,11 @@ def rodar_inferencia(
         ax1.set_yticklabels(['Normal', 'Anomalia (Real)'], fontsize=11, rotation=90)
 
         ax2 = fig.add_subplot(222)
-        metrics_names = ['PR-AUC', 'ROC-AUC']
-        metrics_vals = [pr_auc, roc_auc]
-        sns.barplot(x=metrics_names, y=metrics_vals, hue=metrics_names, palette=['#17becf', '#9467bd'], legend=False, ax=ax2)
-        ax2.set_title('2. Capacidade Preditiva (AUCs)', fontsize=14, fontweight='bold')
-        ax2.set_ylim(0, 1.1)
+        metrics_names = ['PR-AUC', 'Lift_PR', 'ROC-AUC']
+        metrics_vals = [pr_auc, official_metrics["lift_pr"], roc_auc]
+        sns.barplot(x=metrics_names, y=metrics_vals, hue=metrics_names, palette=['#17becf', '#ff7f0e', '#9467bd'], legend=False, ax=ax2)
+        ax2.set_title('2. PR-AUC, Lift e ROC-AUC', fontsize=14, fontweight='bold')
+        ax2.set_ylim(0, max(1.1, max(metrics_vals) * 1.1))
         for container in ax2.containers:
             ax2.bar_label(container, fmt='%.3f', padding=3, fontsize=12, fontweight='bold')
 
