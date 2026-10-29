@@ -4,6 +4,7 @@ metadata:
 settings:
   results_root: results/demo_banca
   cache_root: data/GLOBAL_CACHE_DETECTOR_demo_banca
+  # Uma semente para a demo; resultados ilustrativos, não substituem a campanha confirmatória.
   seeds: [42]
   save_checkpoints: true
   run_mixed_eval: true
