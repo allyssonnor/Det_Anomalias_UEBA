@@ -305,8 +305,8 @@ def generate_demo_plots(root, output_dir, csv_path=None, source="training"):
     print(f"Resumo por combinação: {summary_path}")
 
 
-def generate_batch_inference_plots(csv_path, output_dir, confusion_percentile=95):
-    """Gera figuras da inferência batch em um dataset de destino comum."""
+def generate_batch_inference_plots(csv_path, output_dir, confusion_percentiles=(90, 95)):
+    """Gera matrizes, curvas e comparações com baselines triviais da inferência batch."""
     csv_path = Path(csv_path)
     output_dir = Path(output_dir)
     if not csv_path.is_file():
@@ -315,7 +315,8 @@ def generate_batch_inference_plots(csv_path, output_dir, confusion_percentile=95
     required = {
         "source_dir", "inference_dataset", "model_preset", "split_strategy",
         "threshold_mode", "percentile", "precision", "recall", "f1_score",
-        "pr_auc", "roc_auc", "lift_pr", "prevalence", "tp", "fp", "tn", "fn",
+        "pr_auc", "roc_auc", "lift_pr", "prevalence", "n_windows",
+        "n_anomalies_true", "n_alerts", "tp", "fp", "tn", "fn",
     }
     missing = sorted(required - set(df.columns))
     if missing:
@@ -326,55 +327,63 @@ def generate_batch_inference_plots(csv_path, output_dir, confusion_percentile=95
 
     df["percentile"] = pd.to_numeric(df["percentile"], errors="coerce")
     df["label"] = df["source_dir"].map(lambda value: Path(str(value)).name)
-    grouped = df.groupby("source_dir", sort=True, dropna=False)
-    operating = df[df["percentile"] == confusion_percentile].copy()
-    if operating.empty:
-        raise ValueError(
-            f"O CSV não contém o percentil {confusion_percentile} para gerar matrizes."
-        )
-    operating.sort_values("source_dir", inplace=True)
-
-    # Matrizes de confusão no mesmo ponto de operação para comparação entre modelos.
-    count = len(operating)
-    columns = min(4, count)
-    rows = math.ceil(count / columns)
-    fig, axes = plt.subplots(rows, columns, figsize=(4.6 * columns, 4.2 * rows))
-    axes = np.atleast_1d(axes).ravel()
-    for index, (_, row) in enumerate(operating.iterrows()):
-        matrix = np.array([
-            [int(row["tn"]), int(row["fp"])],
-            [int(row["fn"]), int(row["tp"])],
-        ])
-        ax = axes[index]
-        sns.heatmap(
-            matrix, annot=True, fmt="d", cmap="Blues", cbar=False, square=True,
-            ax=ax, xticklabels=["Normal", "Anomalia"],
-            yticklabels=["Normal", "Anomalia"],
-            annot_kws={"size": 10, "weight": "bold"},
-        )
-        ax.set_xlabel("Classe predita")
-        ax.set_ylabel("Classe real")
-        ax.set_title(
-            f"{row['label']}\n{row['model_preset']} · {row['split_strategy']} · "
-            f"{row['threshold_mode']} · P{int(row['percentile'])}",
-            fontsize=8,
-        )
-    for ax in axes[count:]:
-        ax.set_visible(False)
     dataset_name = str(df["inference_dataset"].iloc[0])
-    fig.suptitle(
-        f"Inferência em {dataset_name} — matrizes no percentil {confusion_percentile}",
-        fontsize=14, fontweight="bold",
-    )
-    fig.tight_layout(rect=[0, 0, 1, 0.96])
-    confusion_path = output_dir / "matrizes_confusao_test_prev_5pct.png"
-    fig.savefig(confusion_path, dpi=200, bbox_inches="tight")
-    plt.close(fig)
+    confusion_paths = {}
+
+    # Matrizes para dois pontos operacionais: P90 amplia o orçamento de alertas;
+    # P95 mantém a referência de baixo volume já usada na demo.
+    for percentile in confusion_percentiles:
+        operating = df[df["percentile"] == percentile].copy()
+        if operating.empty:
+            raise ValueError(
+                f"O CSV não contém o percentil {percentile} para gerar matrizes."
+            )
+        operating.sort_values("source_dir", inplace=True)
+        count = len(operating)
+        columns = min(4, count)
+        rows = math.ceil(count / columns)
+        fig, axes = plt.subplots(rows, columns, figsize=(4.6 * columns, 4.2 * rows))
+        axes = np.atleast_1d(axes).ravel()
+        for index, (_, row) in enumerate(operating.iterrows()):
+            matrix = np.array([
+                [int(row["tn"]), int(row["fp"])],
+                [int(row["fn"]), int(row["tp"])],
+            ])
+            ax = axes[index]
+            sns.heatmap(
+                matrix, annot=True, fmt="d", cmap="Blues", cbar=False, square=True,
+                ax=ax, xticklabels=["Normal", "Anomalia"],
+                yticklabels=["Normal", "Anomalia"],
+                annot_kws={"size": 10, "weight": "bold"},
+            )
+            ax.set_xlabel("Classe predita")
+            ax.set_ylabel("Classe real")
+            ax.set_title(
+                f"{row['label']}\n{row['model_preset']} · {row['split_strategy']} · "
+                f"{row['threshold_mode']} · P{int(row['percentile'])}",
+                fontsize=8,
+            )
+        for ax in axes[count:]:
+            ax.set_visible(False)
+        fig.suptitle(
+            f"Inferência em {dataset_name} — matrizes no percentil {percentile}",
+            fontsize=14, fontweight="bold",
+        )
+        fig.tight_layout(rect=[0, 0, 1, 0.96])
+        confusion_path = output_dir / f"matrizes_confusao_test_prev_5pct_p{percentile}.png"
+        fig.savefig(confusion_path, dpi=200, bbox_inches="tight")
+        plt.close(fig)
+        confusion_paths[int(percentile)] = confusion_path
 
     # Curvas das métricas de decisão ao longo da varredura de percentis.
-    labels = []
+    label_by_source = {}
     for _, row in df.drop_duplicates("source_dir").sort_values("source_dir").iterrows():
-        labels.append(f"{row['label']} · {row['model_preset']} · {row['split_strategy']} · {row['threshold_mode']}")
+        short_scenario = "BF" if "Bruteforce" in str(row["source_dir"]) else "Generalista"
+        short_split = "Chron" if str(row["split_strategy"]).lower().startswith("chron") else "Random"
+        short_model = "RF" if "forest" in str(row["model_preset"]).lower() else "MLP"
+        label_by_source[row["source_dir"]] = (
+            f"{short_scenario} · {short_split} · {short_model} · {row['threshold_mode']}"
+        )
     source_order = sorted(df["source_dir"].dropna().unique())
     metrics = [("precision", "Precisão"), ("recall", "Recall"), ("f1_score", "F1")]
     fig, axes = plt.subplots(3, 1, figsize=(15, 12), sharex=True)
@@ -382,10 +391,11 @@ def generate_batch_inference_plots(csv_path, output_dir, confusion_percentile=95
     for ax, (metric, title) in zip(axes, metrics):
         for color, source in zip(palette, source_order):
             part = df[df["source_dir"] == source].sort_values("percentile")
-            if part.empty:
-                continue
-            ax.plot(part["percentile"], part[metric], marker="o", linewidth=1.5,
-                    markersize=3, color=color, label=labels[source_order.index(source)])
+            if not part.empty:
+                ax.plot(
+                    part["percentile"], part[metric], marker="o", linewidth=1.5,
+                    markersize=3, color=color, label=label_by_source[source],
+                )
         ax.set_ylabel(title)
         ax.set_ylim(0, 1.05)
         ax.grid(axis="y", alpha=0.25)
@@ -397,7 +407,89 @@ def generate_batch_inference_plots(csv_path, output_dir, confusion_percentile=95
     fig.savefig(curves_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
 
-    # Métricas de ranking e Lift_PR não dependem do ponto operacional escolhido.
+    # Baselines: sempre normal, sempre anomalia e seleção aleatória com o mesmo
+    # orçamento de alertas do modelo. O último é a comparação mais justa para F1.
+    baseline_rows = []
+    selected = df[df["percentile"].isin(confusion_percentiles)].copy()
+    for _, row in selected.iterrows():
+        n = int(row["n_windows"])
+        positives = int(row["n_anomalies_true"])
+        prevalence = positives / n if n else 0.0
+        alert_rate = int(row["n_alerts"]) / n if n else 0.0
+        random_f1 = (
+            2 * prevalence * alert_rate / (prevalence + alert_rate)
+            if prevalence + alert_rate > 0 else 0.0
+        )
+        all_positive_f1 = (
+            2 * prevalence / (1 + prevalence) if prevalence > 0 else 0.0
+        )
+        baseline_rows.append({
+            "source_dir": row["source_dir"],
+            "scenario_model_split_threshold": label_by_source[row["source_dir"]],
+            "inference_dataset": row["inference_dataset"],
+            "percentile": int(row["percentile"]),
+            "n_windows": n,
+            "n_anomalies_true": positives,
+            "prevalence": prevalence,
+            "alert_rate_model": alert_rate,
+            "model_precision": row["precision"],
+            "model_recall": row["recall"],
+            "model_f1": row["f1_score"],
+            "random_same_alert_precision_expected": prevalence,
+            "random_same_alert_recall_expected": alert_rate,
+            "random_same_alert_f1_expected": random_f1,
+            "always_normal_accuracy": 1 - prevalence,
+            "always_normal_f1": 0.0,
+            "always_anomaly_precision": prevalence,
+            "always_anomaly_recall": 1.0,
+            "always_anomaly_f1": all_positive_f1,
+            "pr_auc": row["pr_auc"],
+            "random_ranking_pr_auc_baseline": prevalence,
+            "lift_pr": row["lift_pr"],
+            "beats_random_same_alert_f1": bool(row["f1_score"] > random_f1),
+            "beats_always_anomaly_f1": bool(row["f1_score"] > all_positive_f1),
+            "beats_random_ranking": bool(row["lift_pr"] > 1.0),
+        })
+    baseline = pd.DataFrame(baseline_rows)
+    baseline_path = output_dir / "comparacao_baselines_test_prev_5pct.csv"
+    baseline.to_csv(baseline_path, index=False)
+
+    # F1 do modelo versus seletor aleatório com o mesmo número de alertas.
+    # O score aleatório é uma expectativa, não uma execução aleatória específica.
+    fig, axes = plt.subplots(
+        1, len(confusion_percentiles),
+        figsize=(max(15, len(source_order) * 0.95), 10),
+        sharey=True,
+    )
+    axes = np.atleast_1d(axes).ravel()
+    for ax, percentile in zip(axes, confusion_percentiles):
+        part = baseline[baseline["percentile"] == percentile].sort_values(
+            "model_f1", ascending=True
+        )
+        y = np.arange(len(part))
+        height = 0.38
+        ax.barh(y - height / 2, part["model_f1"], height=height,
+                color="#2878a5", label="Modelo")
+        ax.barh(y + height / 2, part["random_same_alert_f1_expected"],
+                height=height, color="#c8c8c8", label="Aleatório, mesmo nº de alertas")
+        ax.set_yticks(y)
+        ax.set_yticklabels(part["scenario_model_split_threshold"], fontsize=7)
+        ax.set_xlim(left=0)
+        ax.set_xlabel("F1 da classe anômala")
+        ax.set_title(f"P{percentile}")
+        ax.grid(axis="x", alpha=0.25)
+    axes[0].set_ylabel("Cenário · partição · modelo · modo de treino")
+    axes[0].legend(loc="lower right", fontsize=8)
+    fig.suptitle(
+        "Comparação com baseline trivial de alertas aleatórios no mesmo orçamento",
+        fontsize=14, fontweight="bold",
+    )
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    baseline_plot_path = output_dir / "baseline_alertas_aleatorios_test_prev_5pct.png"
+    fig.savefig(baseline_plot_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+
+    # Métricas de ranking; Lift_PR=1 equivale ao baseline sem habilidade (PR-AUC=prevalência).
     ranking = df.sort_values("percentile").drop_duplicates("source_dir").copy()
     ranking.sort_values("source_dir", inplace=True)
     summary_cols = [
@@ -412,41 +504,52 @@ def generate_batch_inference_plots(csv_path, output_dir, confusion_percentile=95
 
     x = np.arange(len(summary))
     short_labels = [
-        f"{Path(str(row['source_dir'])).name}\n{row['model_preset']} · "
-        f"{row['split_strategy']} · {row['threshold_mode']}"
+        f"{label_by_source[row['source_dir']]} "
         for _, row in summary.iterrows()
     ]
     fig, axes = plt.subplots(3, 1, figsize=(max(14, len(summary) * 1.1), 9), sharex=True)
-    for ax, metric, title in zip(
+    for index, (ax, metric, title) in enumerate(zip(
         axes, ["pr_auc", "lift_pr", "roc_auc"], ["PR-AUC", "Lift_PR", "ROC-AUC"]
-    ):
+    )):
         values = pd.to_numeric(summary[metric], errors="coerce").to_numpy()
         bars = ax.bar(x, values, color="#3986a8")
         ax.set_ylabel(title)
         ax.grid(axis="y", alpha=0.25)
+        if metric == "lift_pr":
+            ax.axhline(1.0, color="#b22222", linestyle="--", linewidth=1.5,
+                       label="Baseline sem habilidade (Lift_PR=1)")
+            ax.legend(loc="upper right", fontsize=8)
         for bar, value in zip(bars, values):
             if np.isfinite(value):
-                ax.annotate(f"{value:.3f}", (bar.get_x() + bar.get_width()/2, value),
-                            xytext=(0, 3), textcoords="offset points",
-                            ha="center", fontsize=7)
+                ax.annotate(
+                    f"{value:.3f}", (bar.get_x() + bar.get_width()/2, value),
+                    xytext=(0, 3), textcoords="offset points",
+                    ha="center", fontsize=7,
+                )
     axes[-1].set_xticks(x)
-    axes[-1].set_xticklabels(short_labels, rotation=45, ha="right", fontsize=7)
-    fig.suptitle(f"Ranking e Lift_PR — {dataset_name}", fontsize=14, fontweight="bold")
+    axes[-1].set_xticklabels(short_labels, rotation=55, ha="right", fontsize=7)
+    fig.suptitle(f"Ranking versus baseline aleatório — {dataset_name}", fontsize=14, fontweight="bold")
     fig.tight_layout(rect=[0, 0, 1, 0.96])
     ranking_path = output_dir / "ranking_lift_test_prev_5pct.png"
     fig.savefig(ranking_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
 
     print(f"Dataset de inferência: {dataset_name}")
-    print(f"Resultados batch: {len(df)} linhas; modelos: {len(summary)}")
-    print(f"Matrizes de confusão: {confusion_path}")
+    print(f"Resultados batch: {len(df)} linhas; modelos: {df['source_dir'].nunique()}")
+    for percentile, path in confusion_paths.items():
+        print(f"Matrizes P{percentile}: {path}")
     print(f"Curvas por percentil: {curves_path}")
-    print(f"PR-AUC, Lift_PR e ROC-AUC: {ranking_path}")
-    print(f"Resumo tabular: {summary_path}")
+    print(f"Comparação com baseline: {baseline_plot_path}")
+    print(f"PR-AUC, Lift_PR e ROC-AUC (baseline Lift=1): {ranking_path}")
+    print(f"Resumo dos baselines: {baseline_path}")
+    print(f"Resumo de ranking: {summary_path}")
     return {
-        "confusion": confusion_path,
+        "confusion": confusion_paths.get(95),
+        "confusion_by_percentile": confusion_paths,
         "curves": curves_path,
         "ranking": ranking_path,
+        "baseline_plot": baseline_plot_path,
+        "baseline": baseline_path,
         "summary": summary_path,
     }
 
