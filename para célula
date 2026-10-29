@@ -6,7 +6,7 @@
 # Demonstração ao vivo: execute somente a célula 3. Ela carrega os modelos treinados,
 # recalcula os escores no teste já preparado e atualiza métricas e gráficos sem treinar.
 
-# CÉLULA 1 — sincroniza o repositório e verifica o dataset reduzido
+# CÉLULA 1 — sincroniza o repositório e verifica os datasets da demo
 %cd /content
 from pathlib import Path
 
@@ -39,13 +39,36 @@ else:
         raise ValueError(f"Dataset sem registros: {DATASET}")
     formato = "CSV"
 print(
-    f"Dataset da demo: {DATASET} ({DATASET.stat().st_size / 1024**2:.1f} MiB; "
+    f"Dataset generalista: {DATASET} ({DATASET.stat().st_size / 1024**2:.1f} MiB; "
     f"formato detectado: {formato})"
 )
 
-# CÉLULA 2 — preparação prévia: treina uma vez e salva os oito modelos
-# Uma semente (42), mantendo o protocolo da tese:
-# 2 partições × 2 modelos × 2 modos de limiar = 8 execuções.
+# Dataset especialista de brute force conforme YAML 05 da tese.
+BRUTEFORCE_DATASET = Path("data/test_bruteforce_42.jsonl")
+if not BRUTEFORCE_DATASET.is_file() or BRUTEFORCE_DATASET.stat().st_size == 0:
+    raise FileNotFoundError(
+        "Coloque o dataset de brute force da tese em "
+        f"{BRUTEFORCE_DATASET} antes de executar a demo."
+    )
+with BRUTEFORCE_DATASET.open("r", encoding="utf-8") as arquivo:
+    primeira_linha_bf = next((linha.strip() for linha in arquivo if linha.strip()), "")
+if not primeira_linha_bf:
+    raise ValueError(f"Dataset de brute force sem registros: {BRUTEFORCE_DATASET}")
+try:
+    json.loads(primeira_linha_bf)
+except json.JSONDecodeError as erro:
+    raise ValueError(
+        f"O dataset de brute force precisa estar em JSONL válido: {BRUTEFORCE_DATASET}"
+    ) from erro
+print(
+    f"Dataset de brute force: {BRUTEFORCE_DATASET} "
+    f"({BRUTEFORCE_DATASET.stat().st_size / 1024**2:.1f} MiB; JSONL)"
+)
+
+# CÉLULA 2 — preparação prévia: treina uma vez e salva os dezesseis modelos
+# Uma semente (42), mantendo os protocolos YAML 02 e YAML 05 da tese:
+# 4 conjuntos (generalista/brute force × cronológico/aleatório) × 2 modelos
+# (RandomForest/MLP_Single) × 2 modos de limiar = 16 execuções.
 # Esta etapa pode levar tempo; não a execute durante a apresentação.
 !python -u scripts/detectar.py --exp_config config/demo_banca.yaml
 
@@ -58,19 +81,22 @@ if not CSV_TREINO.is_file():
     raise FileNotFoundError(f"Resultados do treinamento não encontrados: {CSV_TREINO}")
 
 resultados_treino = pd.read_csv(CSV_TREINO)
-if len(resultados_treino) != 8:
+if len(resultados_treino) != 16:
     raise RuntimeError(
-        f"Esperava oito execuções de treino; encontrei {len(resultados_treino)}. "
+        f"Esperava dezesseis execuções de treino; encontrei {len(resultados_treino)}. "
         "Confira os erros da célula anterior."
     )
 
 artefatos = list(RUN_ROOT.glob("*/trainer_meta.pkl"))
-if len(artefatos) != 8:
+if len(artefatos) != 16:
     raise RuntimeError(
-        f"Esperava oito modelos salvos; encontrei {len(artefatos)}. "
+        f"Esperava dezesseis modelos salvos; encontrei {len(artefatos)}. "
         "Confira se todos os treinos terminaram."
     )
-print("Preparação concluída. Os oito modelos e os dados de teste pré-processados estão no runtime.")
+print(
+    "Preparação concluída. Os 16 modelos e os dados de teste pré-processados "
+    "estão no runtime."
+)
 
 # CÉLULA 3 — demonstração ao vivo: inferência e gráficos, sem treinamento
 from pathlib import Path
@@ -83,8 +109,12 @@ SEED = 42
 RUN_ROOT = Path("results/demo_banca/full/run_seed42")
 CACHE_ROOT = Path("data/GLOBAL_CACHE_DETECTOR_demo_banca")
 DATASETS = [
+    # YAML 02: modelos generalistas no dataset reduzido versionado no Git.
     ("Synthetic_Chronological_Demo", "chronological"),
     ("Synthetic_Random_Demo", "random"),
+    # YAML 05: cenário de brute force no dataset fornecido para a banca.
+    ("Synthetic_Chronological_Bruteforce", "chronological"),
+    ("Synthetic_Random_Bruteforce", "random"),
 ]
 MODELS = [
     ("RandomForest", True),
@@ -117,8 +147,10 @@ for dataset_name, split in DATASETS:
             )
             RELATORIOS.append(relatorio)
 
-if len(RELATORIOS) != 8:
-    raise RuntimeError(f"Esperava oito inferências; foram concluídas {len(RELATORIOS)}.")
+if len(RELATORIOS) != 16:
+    raise RuntimeError(
+        f"Esperava dezesseis inferências; foram concluídas {len(RELATORIOS)}."
+    )
 
 generate_demo_plots(
     root=str(RUN_ROOT),
@@ -126,8 +158,8 @@ generate_demo_plots(
     source="inference",
 )
 
-display(HTML("<h3>Matrizes de confusão da inferência (seed 42)</h3>"))
-display(Image(filename="results/demo_banca/inferencia/matrizes_confusao_demo.png", width=1200))
-display(HTML("<h3>Métricas por partição, modelo e limiar</h3>"))
-display(Image(filename="results/demo_banca/inferencia/metricas_demo.png", width=1200))
+display(HTML("<h3>Matrizes de confusão: generalistas e brute force (seed 42)</h3>"))
+display(Image(filename="results/demo_banca/inferencia/matrizes_confusao_demo.png", width=1600))
+display(HTML("<h3>Métricas por cenário, partição, modelo e limiar</h3>"))
+display(Image(filename="results/demo_banca/inferencia/metricas_demo.png", width=1600))
 display(pd.read_csv("results/demo_banca/inferencia/resumo_metricas_demo.csv"))
