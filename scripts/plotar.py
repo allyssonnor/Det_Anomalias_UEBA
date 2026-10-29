@@ -30,6 +30,10 @@ METRIC_LABELS = {
 }
 
 
+def _scenario_label(dataset):
+    return "Brute force" if "bruteforce" in str(dataset).casefold() else "Generalista"
+
+
 def _split_label(dataset):
     value = str(dataset).casefold()
     if "chronological" in value or "chrono" in value:
@@ -102,6 +106,7 @@ def _summarize(df):
     for keys, group in grouped:
         row = dict(zip(GROUP_COLUMNS, keys))
         row["split"] = _split_label(row["dataset"])
+        row["scenario"] = _scenario_label(row["dataset"])
         row["n_runs"] = int(len(group))
         row["n_seeds"] = int(group["seed"].nunique())
         for metric in metric_columns:
