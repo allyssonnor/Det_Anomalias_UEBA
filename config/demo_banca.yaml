@@ -4,7 +4,7 @@ metadata:
 settings:
   results_root: results/demo_banca
   cache_root: data/GLOBAL_CACHE_DETECTOR_demo_banca
-  seeds: [42, 123, 999, 1001, 1002, 1003, 1004, 1005, 1006, 1007]
+  seeds: [42]
   save_checkpoints: true
   run_mixed_eval: true
   run_isolated_eval: false
