@@ -283,10 +283,15 @@ def rodar_inferencia(
         report = {
             "seed": int(config.get("training", {}).get("seed", 42)),
             "dataset": (
-                "Synthetic_Chronological_Demo"
-                if str(config.get("sampling", {}).get("split_strategy", "")).casefold()
-                in {"chronological", "chrono"}
-                else "Synthetic_Random_Demo"
+                (
+                    "Synthetic_Chronological" if str(config.get("sampling", {}).get("split_strategy", "")).casefold()
+                    in {"chronological", "chrono"} else "Synthetic_Random"
+                )
+                + (
+                    "_Bruteforce"
+                    if "bruteforce" in os.path.basename(os.path.normpath(output_dir)).casefold()
+                    else "_Demo"
+                )
             ),
             "model_preset": (
                 "RandomForest"
