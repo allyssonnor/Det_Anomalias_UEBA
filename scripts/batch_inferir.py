@@ -192,9 +192,19 @@ def processar_modelo(model_dir, dataset_path, percentis_teste):
 
     resultados_modelo = []
 
-    model_preset = config.get("model_presets", [{}])[0].get("name", "Unknown")
+    model_type = config.get("model", {}).get("type", "Unknown")
+    model_names = {
+        "random_forest_supervised": "RandomForest",
+        "mlp_single": "MLP_Single",
+    }
+    model_preset = model_names.get(model_type, model_type)
     split_strategy = config.get("sampling", {}).get("split_strategy", "Unknown")
-    seed = config.get("training", {}).get("seed", "Unknown")
+    seed = config.get("training", {}).get(
+        "seed", config.get("seed", config.get("settings", {}).get("seeds", ["Unknown"])[0])
+    )
+    threshold_mode = config.get("training", {}).get("threshold_mode", "Unknown")
+    prevalence = float(np.mean(np.asarray(y_test).astype(int))) if len(y_test) else 0.0
+    inference_dataset = os.path.basename(dataset_path)
 
     for p in percentis_teste:
         threshold = np.percentile(scores, p)
@@ -215,12 +225,19 @@ def processar_modelo(model_dir, dataset_path, percentis_teste):
 
         resultados_modelo.append({
             "source_dir": model_dir,
+            "inference_dataset": inference_dataset,
             "model_preset": model_preset,
+            "threshold_mode": threshold_mode,
             "split_strategy": split_strategy,
             "seed": seed,
             "percentile": p,
             "threshold_value": threshold,
             "pr_auc": pr_auc,
+            "lift_pr": (pr_auc / prevalence) if prevalence > 0 else 0.0,
+            "prevalence": prevalence,
+            "n_windows": int(len(y_test)),
+            "n_anomalies_true": int(np.sum(y_test)),
+            "n_alerts": int(np.sum(y_pred)),
             "roc_auc": roc_auc,
             "f1_score": f1,
             "precision": precision,
@@ -253,6 +270,8 @@ def main():
     if os.path.exists(args.output):
         try:
             df_existente = pd.read_csv(args.output)
+            if "inference_dataset" in df_existente.columns and not df_existente["inference_dataset"].eq(os.path.basename(args.dataset)).all():
+                raise ValueError("CSV de retomada pertence a outro dataset; use outro arquivo de saída.")
             if 'source_dir' in df_existente.columns:
                 pastas_processadas = set(df_existente['source_dir'].unique())
                 todos_resultados = df_existente.to_dict('records')
