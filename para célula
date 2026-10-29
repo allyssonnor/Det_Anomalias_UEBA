@@ -170,15 +170,22 @@ if dataset_batch != {TARGET_DATASET.name} or percentis_batch != set(range(90, 10
 figuras = generate_batch_inference_plots(
     csv_path=CSV_RESULTADOS,
     output_dir=OUTPUT_DIR,
-    confusion_percentile=95,
+    confusion_percentiles=(90, 95),
 )
 
-display(HTML(
-    "<h3>Matrizes de confusão em test_prev_5pct.jsonl (percentil 95)</h3>"
-))
-display(Image(filename=str(figuras["confusion"]), width=1500))
+display(HTML("<h3>Matrizes de confusão — P90 (maior orçamento de alertas)</h3>"))
+display(Image(filename=str(figuras["confusion_by_percentile"][90]), width=1500))
+display(HTML("<h3>Matrizes de confusão — P95 (menor orçamento de alertas)</h3>"))
+display(Image(filename=str(figuras["confusion_by_percentile"][95]), width=1500))
 display(HTML("<h3>Precisão, recall e F1 ao variar o percentil do limiar</h3>"))
 display(Image(filename=str(figuras["curves"]), width=1500))
-display(HTML("<h3>PR-AUC, Lift_PR e ROC-AUC por modelo</h3>"))
+display(HTML(
+    "<h3>F1 do modelo versus alertas aleatórios com o mesmo orçamento</h3>"
+))
+display(Image(filename=str(figuras["baseline_plot"]), width=1500))
+display(pd.read_csv(figuras["baseline"]))
+display(HTML(
+    "<h3>PR-AUC, Lift_PR e ROC-AUC (baseline sem habilidade: Lift_PR = 1)</h3>"
+))
 display(Image(filename=str(figuras["ranking"]), width=1500))
 display(pd.read_csv(figuras["summary"]))
