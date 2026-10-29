@@ -75,7 +75,7 @@ print(
 from pathlib import Path
 import pandas as pd
 
-RUN_ROOT = Path("results/demo_banca/full/run_seed42")
+RUN_ROOT = Path("results/demo_banca_v2/full/run_seed42")
 CSV_TREINO = RUN_ROOT / "master_results_table.csv"
 if not CSV_TREINO.is_file():
     raise FileNotFoundError(f"Resultados do treinamento não encontrados: {CSV_TREINO}")
@@ -106,8 +106,8 @@ from IPython.display import Image, display, HTML
 import pandas as pd
 
 SEED = 42
-RUN_ROOT = Path("results/demo_banca/full/run_seed42")
-CACHE_ROOT = Path("data/GLOBAL_CACHE_DETECTOR_demo_banca")
+RUN_ROOT = Path("results/demo_banca_v2/full/run_seed42")
+CACHE_ROOT = Path("data/GLOBAL_CACHE_DETECTOR_demo_banca_v2")
 DATASETS = [
     # YAML 02: modelos generalistas no dataset reduzido versionado no Git.
     ("Synthetic_Chronological_Demo", "chronological"),
@@ -154,12 +154,12 @@ if len(RELATORIOS) != 16:
 
 generate_demo_plots(
     root=str(RUN_ROOT),
-    output_dir="results/demo_banca/inferencia",
+    output_dir="results/demo_banca_v2/inferencia",
     source="inference",
 )
 
 display(HTML("<h3>Matrizes de confusão: generalistas e brute force (seed 42)</h3>"))
-display(Image(filename="results/demo_banca/inferencia/matrizes_confusao_demo.png", width=1600))
+display(Image(filename="results/demo_banca_v2/inferencia/matrizes_confusao_demo.png", width=1600))
 display(HTML("<h3>Métricas por cenário, partição, modelo e limiar</h3>"))
-display(Image(filename="results/demo_banca/inferencia/metricas_demo.png", width=1600))
-display(pd.read_csv("results/demo_banca/inferencia/resumo_metricas_demo.csv"))
+display(Image(filename="results/demo_banca_v2/inferencia/metricas_demo.png", width=1600))
+display(pd.read_csv("results/demo_banca_v2/inferencia/resumo_metricas_demo.csv"))
