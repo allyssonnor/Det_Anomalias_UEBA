@@ -1,80 +1,85 @@
-# CÉLULA 1 — prepara o Colab, baixa os dados e treina o especialista
+# DEMO DA BANCA — protocolo confirmatório da tese
+# Cole cada bloco abaixo em uma célula separada do Colab.
+
+# CÉLULA 1 — sincroniza o repositório e verifica o dataset reduzido
 %cd /content
-![ -d "Det_Anomalias_UEBA" ] || git clone https://github.com/allyssonnor/Det_Anomalias_UEBA.git
-!git -C /content/Det_Anomalias_UEBA pull --ff-only
+from pathlib import Path
+
+REPO = Path("/content/Det_Anomalias_UEBA")
+if REPO.exists():
+    !git -C /content/Det_Anomalias_UEBA pull --ff-only
+else:
+    !git clone https://github.com/allyssonnor/Det_Anomalias_UEBA.git
+
 %cd /content/Det_Anomalias_UEBA
-%pip install -q PyYAML psutil "seaborn>=0.13"
-
-# Baixa o pacote de dados publicado no GitHub e confere sua integridade.
-!wget -q -O data.zip "https://github.com/allyssonnor/Det_Anomalias_UEBA/releases/download/Data/data.zip"
-!echo "7beb3736d0c9f2ccc2c780f665fa97df0e05fcb5b1516129db62b1e4abf028cc  data.zip" | sha256sum -c -
-
-# Extrai sem destruir arquivos já presentes e mescla a pasta data/ interna do ZIP, se houver.
-!mkdir -p data
-!unzip -q -n data.zip -d data/
-!if [ -d data/data ]; then cp -a data/data/. data/ && rm -rf data/data; fi
+%pip install -q PyYAML psutil "seaborn>=0.13" pyarrow
 
 from pathlib import Path
+import json
 
-DATA_DIR = Path("/content/Det_Anomalias_UEBA/data")
-links = [
-    (DATA_DIR / "synthetic", DATA_DIR / "output_thesis_marathon" / "synthetic"),
-    (DATA_DIR / "synthetic2", DATA_DIR / "output_thesis_marathon" / "synthetic2"),
-]
-for link, target in links:
-    if link.is_symlink():
-        link.unlink()
-    elif link.is_dir():
-        continue
-    elif link.exists():
-        link.unlink()
-    link.symlink_to(target, target_is_directory=True)
+DATASET = Path("seed_1_cut.txt")
+if not DATASET.is_file() or DATASET.stat().st_size == 0:
+    raise FileNotFoundError(f"Dataset reduzido não encontrado ou vazio: {DATASET}")
 
-required_paths = [
-    DATA_DIR / "output_thesis_marathon" / "synthetic" / "train",
-    DATA_DIR / "output_thesis_marathon" / "synthetic" / "val",
-    DATA_DIR / "output_thesis_marathon" / "synthetic" / "test",
-    DATA_DIR / "synthetic2" / "test_bruteforce" / "test_bruteforce.jsonl",
-]
-missing = [str(path) for path in required_paths if not path.exists()]
-if missing:
-    raise FileNotFoundError("Arquivos/diretórios do pacote de dados ausentes:\n" + "\n".join(missing))
+with DATASET.open("r", encoding="utf-8") as arquivo:
+    primeira_linha = next((linha.strip() for linha in arquivo if linha.strip()), "")
+if not primeira_linha.startswith("{"):
+    raise ValueError(
+        f"{DATASET} não parece estar em formato JSONL (cada linha deve ser um objeto JSON)."
+    )
+json.loads(primeira_linha)
+print(f"Dataset da demo: {DATASET} ({DATASET.stat().st_size / 1024**2:.1f} MiB)")
 
-# Treina uma execução demonstrativa (seed 42) e avalia o ataque isolado.
-!python -u scripts/detectar.py --exp_config config/detectar_especialista.yaml
+# CÉLULA 2 — treina e avalia o protocolo completo em dez sementes
+# São 80 execuções: 2 partições × 2 modelos × 2 modos de limiar × 10 sementes.
+!python -u scripts/detectar.py --exp_config config/demo_banca.yaml
 
-run_root = Path("results/banca_runs/full/run_seed42")
-if not list(run_root.rglob("trainer_meta.pkl")):
-    raise RuntimeError("O treino não gerou trainer_meta.pkl; confira os erros acima.")
-
-# CÉLULA 2 — executa a inferência e gera os dois dashboards
+# CÉLULA 3 — confere a cobertura e gera os gráficos da execução
 from pathlib import Path
-import sys
-import os
+import pandas as pd
+from scripts.plotar import generate_demo_plots
+
+RESULT_ROOT = Path("results/demo_banca/full")
+arquivos_resultado = sorted(RESULT_ROOT.glob("run_seed*/master_results_table.csv"))
+if len(arquivos_resultado) != 10:
+    raise RuntimeError(
+        f"Esperava resultados para 10 sementes; encontrei {len(arquivos_resultado)} arquivos."
+    )
+
+resultados = pd.concat(
+    [pd.read_csv(path) for path in arquivos_resultado],
+    ignore_index=True,
+)
+if len(resultados) != 80:
+    raise RuntimeError(
+        f"Esperava 80 execuções concluídas; encontrei {len(resultados)}. "
+        "Verifique as mensagens de erro da célula de treinamento."
+    )
+
+chaves_execucao = [
+    "seed",
+    "dataset",
+    "model_preset",
+    "training.threshold_mode",
+    "model.sequence_length",
+]
+if resultados.duplicated(chaves_execucao).any():
+    raise RuntimeError("Há execuções duplicadas no CSV de resultados da demo.")
+if resultados["seed"].nunique() != 10:
+    raise RuntimeError("A tabela não contém as dez sementes configuradas.")
+
+generate_demo_plots(
+    root=str(RESULT_ROOT),
+    output_dir="results/demo_banca",
+)
+
 from IPython.display import Image, display, HTML
 
-PROJECT_DIR = "/content/Det_Anomalias_UEBA"
-if PROJECT_DIR not in sys.path:
-    sys.path.insert(0, PROJECT_DIR)
-os.chdir(PROJECT_DIR)
-
-display(HTML("<h3>🚀 Executando inferência e gerando dashboard para a banca...</h3>"))
-!PYTHONPATH=. python scripts/inferir.py --config config/detectar_especialista.yaml --data data/synthetic2/test_bruteforce/test_bruteforce.jsonl
-
-plot_final = Path("results/dashboard_inferencia_banca.png")
-if not plot_final.is_file():
-    raise FileNotFoundError(f"Imagem não encontrada: {plot_final}")
-display(HTML("<h4>🏆 Dashboard da inferência isolada:</h4>"))
-display(Image(filename=str(plot_final), width=1000))
-
-# Gera também o dashboard-resumo a partir dos resultados produzidos pelo detectar.py.
-csv_resultados = Path("results/banca_runs/full/run_seed42/master_results_table.csv")
-if not csv_resultados.is_file():
-    raise FileNotFoundError(f"CSV de resultados não encontrado: {csv_resultados}")
-!python scripts/plotar.py --csv results/banca_runs/full/run_seed42/master_results_table.csv --save_path results/dashboard_banca.png
-
-plot_resumo = Path("results/dashboard_banca.png")
-if not plot_resumo.is_file():
-    raise FileNotFoundError(f"Dashboard-resumo não encontrado: {plot_resumo}")
-display(HTML("<h4>📊 Dashboard-resumo do treino e da avaliação isolada:</h4>"))
-display(Image(filename=str(plot_resumo), width=1000))
+display(HTML("<h3>Matrizes de confusão — contagens somadas nas dez sementes</h3>"))
+display(Image(filename="results/demo_banca/matrizes_confusao_demo.png", width=1200))
+display(HTML("<h3>Métricas — médias e desvios-padrão entre sementes</h3>"))
+display(Image(filename="results/demo_banca/metricas_demo.png", width=1200))
+display(HTML(
+    "<p>O resumo numérico por modelo, partição e modo de limiar está em "
+    "<code>results/demo_banca/resumo_metricas_demo.csv</code>.</p>"
+))
