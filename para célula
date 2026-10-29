@@ -1,6 +1,7 @@
 # DEMO DA BANCA — protocolo da tese em uma semente
 # Cole cada bloco em uma célula separada do Colab.
 #
+# A seed 42 é apenas ilustrativa e não substitui os resultados confirmatórios de dez sementes.
 # Preparação: execute as células 1 e 2 antes da banca e mantenha este runtime aberto.
 # Demonstração ao vivo: execute somente a célula 3. Ela carrega os modelos treinados,
 # recalcula os escores no teste já preparado e atualiza métricas e gráficos sem treinar.
