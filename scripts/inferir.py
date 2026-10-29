@@ -32,24 +32,35 @@ from core.temporal_builder import TemporalBuilder
 from core.models.model_factory import create as create_model
 from core.trainer import Trainer
 
-def rodar_inferencia(config_path, dataset_novo_path):
+def rodar_inferencia(
+    config_path,
+    dataset_novo_path=None,
+    model_run_dir=None,
+    cached_test_dir=None,
+    inference_output_dir=None,
+):
     print("="*70)
     print("🔍 INFERÊNCIA DE ALTA FIDELIDADE E ZERO VAZAMENTO")
     print("="*70)
-    
-    if not os.path.exists(dataset_novo_path):
-        raise FileNotFoundError(f"❌ Arquivo de dataset não encontrado: {dataset_novo_path}")
 
-    with open(config_path, "r") as f:
+    if cached_test_dir is None:
+        if not dataset_novo_path:
+            raise ValueError("Informe --data ou --cached_test_dir.")
+        if not os.path.exists(dataset_novo_path):
+            raise FileNotFoundError(f"❌ Arquivo de dataset não encontrado: {dataset_novo_path}")
+    elif not os.path.isdir(cached_test_dir):
+        raise FileNotFoundError(f"❌ Cache de teste não encontrado: {cached_test_dir}")
+
+    with open(config_path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
-        
-    output_dir = config.get("output_dir", "results")
+
+    output_dir = model_run_dir or config.get("output_dir", "results")
     model_path = os.path.join(output_dir, "saved_model")
     meta_path = os.path.join(output_dir, "trainer_meta.pkl")
     thresholds_path = os.path.join(output_dir, "user_thresholds.json")
 
-    # Fallback de busca caso o output_dir direto não tenha os arquivos
-    if not os.path.exists(meta_path):
+    # Busca automática mantida para uso legado; na demo o diretório é explícito.
+    if not os.path.exists(meta_path) and model_run_dir is None:
         meta_encontrada = False
         for root, dirs, files in os.walk(config.get("settings", {}).get("results_root", "results")):
             if "trainer_meta.pkl" in files:
@@ -63,6 +74,11 @@ def rodar_inferencia(config_path, dataset_novo_path):
         if not meta_encontrada:
             raise FileNotFoundError("❌ O arquivo de metadados 'trainer_meta.pkl' não foi encontrado. O modelo concluiu o treino?")
 
+    if not os.path.exists(meta_path):
+        raise FileNotFoundError(
+            f"❌ Artefatos do modelo não encontrados em {output_dir}. "
+            "Treine o modelo antes ou informe --model_run_dir correto."
+        )
     print(f"📂 Diretório de artefatos recuperado: {output_dir}")
 
     config_used_path = os.path.join(output_dir, "config_used.yaml")
@@ -138,41 +154,68 @@ def rodar_inferencia(config_path, dataset_novo_path):
     trainer.user_thresholds = user_thresholds
     trainer.global_threshold = user_thresholds.get("__GLOBAL_FALLBACK__", 0.5)
 
-    print(f"🎯 Forçando leitura do novo dataset alvo: {dataset_novo_path}")
-    config_infer = config.copy()
-    config_infer["data"]["test_path"] = dataset_novo_path
-    config_infer["data"]["train_path"] = "" 
-    config_infer["data"]["val_path"] = ""
-    
-    adapter = DatasetAdapter(config_infer)
-    _, _, test_raw = adapter.load()
-    
-    if test_raw is None or test_raw.empty:
-        raise ValueError("❌ Os dados extraídos estão vazios.")
-
-    # NOVO: Recupera o estado histórico do processador para garantir os mesmos cálculos do treino
-    if 'feature_processor' in meta:
-        processor = meta['feature_processor']
-        print("✅ FeatureProcessor histórico recuperado dos metadados (Zero Leakage garantido).")
+    test_df = None
+    indices_test = None
+    if cached_test_dir:
+        print(f"⚡ Carregando janelas de teste pré-processadas: {cached_test_dir}")
+        cache_files = {
+            "X_test": "X_test.npy",
+            "indices_test": "test_indices.npy",
+            "users_test": "test_users.npy",
+            "y_test": "y_test.npy",
+        }
+        missing = [
+            name for name in cache_files.values()
+            if not os.path.isfile(os.path.join(cached_test_dir, name))
+        ]
+        if missing:
+            raise FileNotFoundError(
+                "Arquivos ausentes no cache de teste: " + ", ".join(missing)
+            )
+        X_test = np.load(os.path.join(cached_test_dir, cache_files["X_test"]))
+        indices_test = np.load(os.path.join(cached_test_dir, cache_files["indices_test"]))
+        users_test = np.load(
+            os.path.join(cached_test_dir, cache_files["users_test"]),
+            allow_pickle=True,
+        )
+        y_test = np.load(os.path.join(cached_test_dir, cache_files["y_test"]))
     else:
-        processor = FeatureProcessor(config_infer)
-        print("⚠️ Aviso: FeatureProcessor recriado do zero (não encontrado no meta).")
+        print(f"🎯 Processando dataset alvo: {dataset_novo_path}")
+        config_infer = config.copy()
+        config_infer.setdefault("data", {})
+        # O arquivo passado é avaliado como conjunto externo completo; não reutiliza
+        # acidentalmente um dataset_path definido na configuração do treinamento.
+        config_infer["data"]["dataset_path"] = ""
+        config_infer["data"]["test_path"] = dataset_novo_path
+        config_infer["data"]["train_path"] = ""
+        config_infer["data"]["val_path"] = ""
 
-    test_scaled = processor.transform(test_raw)
+        adapter = DatasetAdapter(config_infer)
+        _, _, test_raw = adapter.load()
+        if test_raw is None or test_raw.empty:
+            raise ValueError("❌ Os dados extraídos estão vazios.")
 
-    if 'temporal_builder' in meta:
-        temporal = meta['temporal_builder']
-    else:
-        temporal = TemporalBuilder(config_infer)
-        
-    test_df = temporal.transform(test_scaled)
+        if "feature_processor" in meta:
+            processor = meta["feature_processor"]
+            print("✅ FeatureProcessor histórico recuperado dos metadados.")
+        else:
+            processor = FeatureProcessor(config_infer)
+            print("⚠️ Aviso: FeatureProcessor recriado do zero (não encontrado no meta).")
 
-    print("⚙️ Extraindo janelas exatas...")
-    X_test, indices_test, users_test, y_test = trainer._build_sequences(test_df, fit=False, return_labels=True, feature_columns=feature_columns)
+        test_scaled = processor.transform(test_raw)
+        temporal = meta.get("temporal_builder") or TemporalBuilder(config_infer)
+        test_df = temporal.transform(test_scaled)
+
+        print("⚙️ Extraindo janelas temporais...")
+        X_test, indices_test, users_test, y_test = trainer._build_sequences(
+            test_df,
+            fit=False,
+            return_labels=True,
+            feature_columns=feature_columns,
+        )
 
     if X_test is None or len(X_test) == 0:
-        print("⚠️ O dataset novo não possui eventos suficientes para formar janelas temporais.")
-        return
+        raise ValueError("O conjunto de teste não contém janelas válidas.")
 
     print("🚀 Executando inferência probabilística delegada ao motor oficial...")
     if hasattr(final_model, "eval"):
@@ -220,22 +263,73 @@ def rodar_inferencia(config_path, dataset_novo_path):
         print(f" 🎯 ROC-AUC                    : {roc_auc:.4f}")
         print("="*60 + "\n")
 
-    # Salva os resultados CSV / NPY
-    os.makedirs("results", exist_ok=True)
-    df_resultado = test_df.loc[indices_test].copy().reset_index(drop=True)
-    df_resultado["anomaly_score"] = scores
-    df_resultado["is_alert"] = y_pred
-    df_resultado.to_csv("results/resultado_inferencia.csv", index=False)
-    np.save("results/y_pred_novo.npy", scores)
-    
+    # Salva cada inferência no diretório do respectivo artefato.
+    inference_output_dir = inference_output_dir or os.path.join(output_dir, "inference_demo")
+    os.makedirs(inference_output_dir, exist_ok=True)
+    if test_df is not None:
+        df_resultado = test_df.loc[indices_test].copy().reset_index(drop=True)
+        df_resultado["anomaly_score"] = scores
+        df_resultado["is_alert"] = y_pred
+        df_resultado.to_csv(
+            os.path.join(inference_output_dir, "resultado_inferencia.csv"),
+            index=False,
+        )
+    np.save(os.path.join(inference_output_dir, "scores.npy"), scores)
+    np.save(os.path.join(inference_output_dir, "y_pred.npy"), y_pred)
+
     if y_test is not None:
-        np.save("results/y_true_novo.npy", y_test)
+        np.save(os.path.join(inference_output_dir, "y_true.npy"), y_test)
+        prevalence = float(np.mean(y_test)) if len(y_test) else 0.0
+        report = {
+            "seed": int(config.get("training", {}).get("seed", 42)),
+            "dataset": (
+                "Synthetic_Chronological_Demo"
+                if str(config.get("sampling", {}).get("split_strategy", "")).casefold()
+                in {"chronological", "chrono"}
+                else "Synthetic_Random_Demo"
+            ),
+            "model_preset": (
+                "RandomForest"
+                if config.get("model", {}).get("type") == "random_forest_supervised"
+                else "MLP_Single"
+            ),
+            "training.threshold_mode": thresh_mode,
+            "model.sequence_length": int(config.get("model", {}).get("sequence_length", 20)),
+            "n_test_sequences": int(len(y_test)),
+            "n_positive": int(np.sum(y_test)),
+            "n_alerts": int(np.sum(y_pred)),
+            "precision": float(class_1.get("precision", 0.0)),
+            "recall": float(class_1.get("recall", 0.0)),
+            "f1_score": float(class_1.get("f1-score", 0.0)),
+            "pr_auc": float(pr_auc),
+            "roc_auc": float(roc_auc),
+            "prevalence": prevalence,
+            "lift_pr": float(pr_auc / prevalence) if prevalence > 0 else 0.0,
+            "tn": int(tn),
+            "fp": int(fp),
+            "fn": int(fn),
+            "tp": int(tp),
+        }
+        with open(
+            os.path.join(inference_output_dir, "classification_report.json"),
+            "w",
+            encoding="utf-8",
+        ) as report_file:
+            json.dump(report, report_file, indent=2, ensure_ascii=False)
+    else:
+        raise ValueError("O teste cacheado não contém rótulos para calcular métricas.")
 
     if y_test is not None:
         print("📊 Gerando Dashboard Visual...")
         plt.style.use('seaborn-v0_8-whitegrid' if 'seaborn-v0_8-whitegrid' in plt.style.available else 'default')
         fig = plt.figure(figsize=(14, 10))
-        fig.suptitle('Avaliação de Inferência - Defesa de Tese (UEBA)', fontsize=18, fontweight='bold', y=0.96)
+        fig.suptitle(
+            f"Avaliação de Inferência - {report['model_preset']} · "
+            f"{report['dataset']} · limiar {thresh_mode}",
+            fontsize=16,
+            fontweight="bold",
+            y=0.96,
+        )
 
         ax1 = fig.add_subplot(221)
         cm = np.array([[tn, fp], [fn, tp]])
@@ -263,16 +357,26 @@ def rodar_inferencia(config_path, dataset_novo_path):
             ax3.bar_label(container, fmt='%.3f', padding=3, fontsize=12, fontweight='bold')
 
         plt.tight_layout(rect=[0, 0.03, 1, 0.93])
-        dashboard_path = "results/dashboard_inferencia_banca.png"
+        dashboard_path = os.path.join(inference_output_dir, "dashboard_inferencia.png")
         plt.savefig(dashboard_path, dpi=300)
         plt.close()
         print(f"✅ Dashboard salvo com sucesso em: {dashboard_path}")
+    return report
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, required=True, help="YAML de configuração do modelo.")
-    parser.add_argument("--data", type=str, required=True, help="Caminho do novo dataset a ser processado.")
+    parser.add_argument("--data", type=str, default=None, help="Dataset externo a ser processado.")
+    parser.add_argument("--model_run_dir", type=str, default=None, help="Diretório de artefatos da execução treinada.")
+    parser.add_argument("--cached_test_dir", type=str, default=None, help="Cache de janelas de teste produzido por detectar.py.")
+    parser.add_argument("--output_dir", type=str, default=None, help="Diretório para salvar métricas, predições e imagem.")
     args = parser.parse_args()
 
-    rodar_inferencia(args.config, args.data)
+    rodar_inferencia(
+        args.config,
+        args.data,
+        model_run_dir=args.model_run_dir,
+        cached_test_dir=args.cached_test_dir,
+        inference_output_dir=args.output_dir,
+    )
