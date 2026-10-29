@@ -1,5 +1,9 @@
-# DEMO DA BANCA — protocolo confirmatório da tese
-# Cole cada bloco abaixo em uma célula separada do Colab.
+# DEMO DA BANCA — protocolo da tese em uma semente
+# Cole cada bloco em uma célula separada do Colab.
+#
+# Preparação: execute as células 1 e 2 antes da banca e mantenha este runtime aberto.
+# Demonstração ao vivo: execute somente a célula 3. Ela carrega os modelos treinados,
+# recalcula os escores no teste já preparado e atualiza métricas e gráficos sem treinar.
 
 # CÉLULA 1 — sincroniza o repositório e verifica o dataset reduzido
 %cd /content
@@ -30,56 +34,91 @@ if not primeira_linha.startswith("{"):
 json.loads(primeira_linha)
 print(f"Dataset da demo: {DATASET} ({DATASET.stat().st_size / 1024**2:.1f} MiB)")
 
-# CÉLULA 2 — treina e avalia o protocolo completo em dez sementes
-# São 80 execuções: 2 partições × 2 modelos × 2 modos de limiar × 10 sementes.
+# CÉLULA 2 — preparação prévia: treina uma vez e salva os oito modelos
+# Uma semente (42), mantendo o protocolo da tese:
+# 2 partições × 2 modelos × 2 modos de limiar = 8 execuções.
+# Esta etapa pode levar tempo; não a execute durante a apresentação.
 !python -u scripts/detectar.py --exp_config config/demo_banca.yaml
 
-# CÉLULA 3 — confere a cobertura e gera os gráficos da execução
 from pathlib import Path
 import pandas as pd
+
+RUN_ROOT = Path("results/demo_banca/full/run_seed42")
+CSV_TREINO = RUN_ROOT / "master_results_table.csv"
+if not CSV_TREINO.is_file():
+    raise FileNotFoundError(f"Resultados do treinamento não encontrados: {CSV_TREINO}")
+
+resultados_treino = pd.read_csv(CSV_TREINO)
+if len(resultados_treino) != 8:
+    raise RuntimeError(
+        f"Esperava oito execuções de treino; encontrei {len(resultados_treino)}. "
+        "Confira os erros da célula anterior."
+    )
+
+artefatos = list(RUN_ROOT.glob("*/trainer_meta.pkl"))
+if len(artefatos) != 8:
+    raise RuntimeError(
+        f"Esperava oito modelos salvos; encontrei {len(artefatos)}. "
+        "Confira se todos os treinos terminaram."
+    )
+print("Preparação concluída. Os oito modelos e os dados de teste pré-processados estão no runtime.")
+
+# CÉLULA 3 — demonstração ao vivo: inferência e gráficos, sem treinamento
+from pathlib import Path
+from scripts.inferir import rodar_inferencia
 from scripts.plotar import generate_demo_plots
+from IPython.display import Image, display, HTML
+import pandas as pd
 
-RESULT_ROOT = Path("results/demo_banca/full")
-arquivos_resultado = sorted(RESULT_ROOT.glob("run_seed*/master_results_table.csv"))
-if len(arquivos_resultado) != 10:
-    raise RuntimeError(
-        f"Esperava resultados para 10 sementes; encontrei {len(arquivos_resultado)} arquivos."
-    )
-
-resultados = pd.concat(
-    [pd.read_csv(path) for path in arquivos_resultado],
-    ignore_index=True,
-)
-if len(resultados) != 80:
-    raise RuntimeError(
-        f"Esperava 80 execuções concluídas; encontrei {len(resultados)}. "
-        "Verifique as mensagens de erro da célula de treinamento."
-    )
-
-chaves_execucao = [
-    "seed",
-    "dataset",
-    "model_preset",
-    "training.threshold_mode",
-    "model.sequence_length",
+SEED = 42
+RUN_ROOT = Path("results/demo_banca/full/run_seed42")
+CACHE_ROOT = Path("data/GLOBAL_CACHE_DETECTOR_demo_banca")
+DATASETS = [
+    ("Synthetic_Chronological_Demo", "chronological"),
+    ("Synthetic_Random_Demo", "random"),
 ]
-if resultados.duplicated(chaves_execucao).any():
-    raise RuntimeError("Há execuções duplicadas no CSV de resultados da demo.")
-if resultados["seed"].nunique() != 10:
-    raise RuntimeError("A tabela não contém as dez sementes configuradas.")
+MODELS = [
+    ("RandomForest", True),
+    ("MLP_Single", False),
+]
+THRESHOLDS = ["global", "per_user"]
+RELATORIOS = []
+
+for dataset_name, split in DATASETS:
+    for model_name, supervised in MODELS:
+        cache_dir = (
+            CACHE_ROOT
+            / dataset_name
+            / f"seed_{SEED}"
+            / split
+            / f"seq_20_sup_{supervised}"
+        )
+        for threshold_mode in THRESHOLDS:
+            model_dir = RUN_ROOT / (
+                f"{dataset_name}_{model_name}_{threshold_mode}_20"
+            )
+            if not (model_dir / "trainer_meta.pkl").is_file():
+                raise FileNotFoundError(
+                    f"Modelo não encontrado: {model_dir}. Execute a célula 2 antes."
+                )
+            relatorio = rodar_inferencia(
+                "config/demo_banca.yaml",
+                model_run_dir=str(model_dir),
+                cached_test_dir=str(cache_dir),
+            )
+            RELATORIOS.append(relatorio)
+
+if len(RELATORIOS) != 8:
+    raise RuntimeError(f"Esperava oito inferências; foram concluídas {len(RELATORIOS)}.")
 
 generate_demo_plots(
-    root=str(RESULT_ROOT),
-    output_dir="results/demo_banca",
+    root=str(RUN_ROOT),
+    output_dir="results/demo_banca/inferencia",
+    source="inference",
 )
 
-from IPython.display import Image, display, HTML
-
-display(HTML("<h3>Matrizes de confusão — contagens somadas nas dez sementes</h3>"))
-display(Image(filename="results/demo_banca/matrizes_confusao_demo.png", width=1200))
-display(HTML("<h3>Métricas — médias e desvios-padrão entre sementes</h3>"))
-display(Image(filename="results/demo_banca/metricas_demo.png", width=1200))
-display(HTML(
-    "<p>O resumo numérico por modelo, partição e modo de limiar está em "
-    "<code>results/demo_banca/resumo_metricas_demo.csv</code>.</p>"
-))
+display(HTML("<h3>Matrizes de confusão da inferência (seed 42)</h3>"))
+display(Image(filename="results/demo_banca/inferencia/matrizes_confusao_demo.png", width=1200))
+display(HTML("<h3>Métricas por partição, modelo e limiar</h3>"))
+display(Image(filename="results/demo_banca/inferencia/metricas_demo.png", width=1200))
+display(pd.read_csv("results/demo_banca/inferencia/resumo_metricas_demo.csv"))
