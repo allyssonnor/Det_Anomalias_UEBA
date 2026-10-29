@@ -1,6 +1,7 @@
-# Configuração legada para o experimento especialista de força bruta.
-# Não é usada pela demo da banca. Para a demo alinhada ao protocolo confirmatório,
-# use config/demo_banca.yaml (RandomForest + MLP_Single, seed 42).
+# Configuração histórica do especialista MLP_Bruteforce_Supervised.
+# A demo da banca segue o cenário YAML 05 da tese em config/demo_banca.yaml:
+# RandomForest + MLP_Single sobre o dataset de brute force, com seed 42.
+# Esta configuração antiga, com outro modelo e protocolo, não é usada na demo.
 
 # ==============================================================================
 # CONFIGURAÇÃO: ESPECIALISTA SUPERVISIONADO EM FORÇA BRUTA (BRUTEFORCE)
