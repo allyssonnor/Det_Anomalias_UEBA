@@ -4,7 +4,7 @@
 # A seed 42 é apenas ilustrativa e não substitui os resultados confirmatórios de dez sementes.
 # Preparação: execute as células 1 e 2 antes da banca e mantenha este runtime aberto.
 # Demonstração ao vivo: execute somente a célula 3. Ela carrega os modelos treinados,
-# recalcula os escores no teste já preparado e atualiza métricas e gráficos sem treinar.
+# processa test_prev_5pct.jsonl em todos os modelos salvos e atualiza métricas e gráficos sem treinar.
 
 # CÉLULA 1 — sincroniza o repositório e verifica os datasets da demo
 %cd /content
@@ -94,72 +94,71 @@ if len(artefatos) != 16:
         "Confira se todos os treinos terminaram."
     )
 print(
-    "Preparação concluída. Os 16 modelos e os dados de teste pré-processados "
-    "estão no runtime."
+    "Preparação concluída. Os 16 modelos estão salvos; a célula 3 processará "
+    "test_prev_5pct.jsonl como dataset de destino."
 )
 
-# CÉLULA 3 — demonstração ao vivo: inferência e gráficos, sem treinamento
+# CÉLULA 3 — inferência ao vivo no dataset de destino, sem treinamento
 from pathlib import Path
-from scripts.inferir import rodar_inferencia
-from scripts.plotar import generate_demo_plots
-from IPython.display import Image, display, HTML
+import subprocess
+import sys
 import pandas as pd
+from scripts.plotar import generate_batch_inference_plots
+from IPython.display import Image, display, HTML
 
-SEED = 42
 RUN_ROOT = Path("results/demo_banca_v2/full/run_seed42")
-CACHE_ROOT = Path("data/GLOBAL_CACHE_DETECTOR_demo_banca_v2")
-DATASETS = [
-    # YAML 02: modelos generalistas no dataset reduzido versionado no Git.
-    ("Synthetic_Chronological_Demo", "chronological"),
-    ("Synthetic_Random_Demo", "random"),
-    # YAML 05: cenário de brute force no dataset fornecido para a banca.
-    ("Synthetic_Chronological_Bruteforce", "chronological"),
-    ("Synthetic_Random_Bruteforce", "random"),
-]
-MODELS = [
-    ("RandomForest", True),
-    ("MLP_Single", False),
-]
-THRESHOLDS = ["global", "per_user"]
-RELATORIOS = []
+TARGET_DATASET = Path("data/test_prev_5pct.jsonl")
+OUTPUT_DIR = Path("results/demo_banca_v2/inferencia_test_prev_5pct")
+CSV_RESULTADOS = OUTPUT_DIR / "batch_inferencia_test_prev_5pct.csv"
 
-for dataset_name, split in DATASETS:
-    for model_name, supervised in MODELS:
-        cache_dir = (
-            CACHE_ROOT
-            / dataset_name
-            / f"seed_{SEED}"
-            / split
-            / f"seq_20_sup_{supervised}"
-        )
-        for threshold_mode in THRESHOLDS:
-            model_dir = RUN_ROOT / (
-                f"{dataset_name}_{model_name}_{threshold_mode}_20"
-            )
-            if not (model_dir / "trainer_meta.pkl").is_file():
-                raise FileNotFoundError(
-                    f"Modelo não encontrado: {model_dir}. Execute a célula 2 antes."
-                )
-            relatorio = rodar_inferencia(
-                "config/demo_banca.yaml",
-                model_run_dir=str(model_dir),
-                cached_test_dir=str(cache_dir),
-            )
-            RELATORIOS.append(relatorio)
-
-if len(RELATORIOS) != 16:
-    raise RuntimeError(
-        f"Esperava dezesseis inferências; foram concluídas {len(RELATORIOS)}."
+# O seed_1_cut.txt (e o dataset de brute force) foi usado na célula 2 para treino.
+# Aqui, todos os modelos treinados são avaliados no mesmo dataset externo de destino.
+if not TARGET_DATASET.is_file() or TARGET_DATASET.stat().st_size == 0:
+    raise FileNotFoundError(
+        f"Dataset de inferência ausente ou vazio: {TARGET_DATASET}. "
+        "Confirme que data/test_prev_5pct.jsonl está no Git."
     )
+with TARGET_DATASET.open("r", encoding="utf-8") as arquivo:
+    primeira_linha = next((linha.strip() for linha in arquivo if linha.strip()), "")
+if not primeira_linha:
+    raise ValueError(f"Dataset de inferência sem registros: {TARGET_DATASET}")
+try:
+    import json
+    json.loads(primeira_linha)
+except json.JSONDecodeError as erro:
+    raise ValueError(f"Dataset precisa estar em JSONL válido: {TARGET_DATASET}") from erro
 
-generate_demo_plots(
-    root=str(RUN_ROOT),
-    output_dir="results/demo_banca_v2/inferencia",
-    source="inference",
+if not RUN_ROOT.is_dir():
+    raise FileNotFoundError(f"Modelos da demo não encontrados: {RUN_ROOT}. Execute a célula 2.")
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+subprocess.run(
+    [
+        sys.executable,
+        "-u",
+        "scripts/batch_inferir.py",
+        "--root",
+        str(RUN_ROOT),
+        "--dataset",
+        str(TARGET_DATASET),
+        "--output",
+        str(CSV_RESULTADOS),
+    ],
+    check=True,
 )
 
-display(HTML("<h3>Matrizes de confusão: generalistas e brute force (seed 42)</h3>"))
-display(Image(filename="results/demo_banca_v2/inferencia/matrizes_confusao_demo.png", width=1600))
-display(HTML("<h3>Métricas por cenário, partição, modelo e limiar</h3>"))
-display(Image(filename="results/demo_banca_v2/inferencia/metricas_demo.png", width=1600))
-display(pd.read_csv("results/demo_banca_v2/inferencia/resumo_metricas_demo.csv"))
+figuras = generate_batch_inference_plots(
+    csv_path=CSV_RESULTADOS,
+    output_dir=OUTPUT_DIR,
+    confusion_percentile=95,
+)
+
+display(HTML(
+    "<h3>Matrizes de confusão em test_prev_5pct.jsonl (percentil 95)</h3>"
+))
+display(Image(filename=str(figuras["confusion"]), width=1500))
+display(HTML("<h3>Precisão, recall e F1 ao variar o percentil do limiar</h3>"))
+display(Image(filename=str(figuras["curves"]), width=1500))
+display(HTML("<h3>PR-AUC, Lift_PR e ROC-AUC por modelo</h3>"))
+display(Image(filename=str(figuras["ranking"]), width=1500))
+display(pd.read_csv(figuras["summary"]))
