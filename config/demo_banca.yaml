@@ -1,6 +1,6 @@
 metadata:
-  name: Demo de banca - protocolo confirmatório da tese
-  role: Reexecução demonstrativa do protocolo YAML 02 sobre o dataset reduzido versionado no Git
+  name: Demo de banca - modelos generalistas e especialista em brute force
+  role: Reexecução demonstrativa dos protocolos YAML 02 e YAML 05 com uma semente
 settings:
   results_root: results/demo_banca
   cache_root: data/GLOBAL_CACHE_DETECTOR_demo_banca
@@ -10,6 +10,7 @@ settings:
   run_mixed_eval: true
   run_isolated_eval: false
 datasets:
+  # Modelos generalistas: protocolo YAML 02, no dataset reduzido versionado no Git.
   - name: Synthetic_Chronological_Demo
     overrides:
       sampling.split_strategy: chronological
@@ -28,6 +29,20 @@ datasets:
       sampling.split_strategy: random
       data.dataset_path: seed_1_cut.txt
       features.enabled_groups: *feature_groups
+
+  # Especialista em brute force: protocolo YAML 05.
+  # Coloque o dataset usado na tese em data/test_bruteforce_42.jsonl.
+  - name: Synthetic_Chronological_Bruteforce
+    overrides:
+      sampling.split_strategy: chronological
+      data.dataset_path: data/test_bruteforce_42.jsonl
+      features.enabled_groups: *feature_groups
+  - name: Synthetic_Random_Bruteforce
+    overrides:
+      sampling.split_strategy: random
+      data.dataset_path: data/test_bruteforce_42.jsonl
+      features.enabled_groups: *feature_groups
+
 model_presets:
   - name: RandomForest
     overrides:
