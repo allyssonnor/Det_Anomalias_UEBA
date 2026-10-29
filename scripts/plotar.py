@@ -3,6 +3,7 @@
 """Gera matrizes de confusão e resumo de métricas da execução da demo."""
 
 import argparse
+import json
 import math
 from pathlib import Path
 
@@ -51,7 +52,36 @@ def _load_results(root, csv_path=None, source="training"):
                 f"Nenhum classification_report.json encontrado em {root!s}. "
                 "Execute primeiro a célula de inferência."
             )
-        frames = [pd.read_json(path, typ="series").to_frame().T for path in paths]
+
+        # Os relatórios no diretório raiz de cada modelo vêm do treinamento e têm
+        # apenas métricas. A demo deve plotar os relatórios completos de inference_demo.
+        required = set(
+            GROUP_COLUMNS
+            + CONFUSION_COLUMNS
+            + ["seed", "precision", "recall", "f1_score", "pr_auc",
+               "roc_auc", "prevalence", "lift_pr"]
+        )
+        frames = []
+        ignored = 0
+        for path in paths:
+            try:
+                with path.open("r", encoding="utf-8") as report_file:
+                    report = json.load(report_file)
+            except (OSError, json.JSONDecodeError):
+                ignored += 1
+                continue
+            if not isinstance(report, dict) or not required.issubset(report):
+                ignored += 1
+                continue
+            frames.append(pd.DataFrame([report]))
+
+        if not frames:
+            raise ValueError(
+                f"Nenhum relatório completo de inferência encontrado em {root!s}. "
+                "Rode a célula 3 depois de preparar os modelos."
+            )
+        if ignored:
+            print(f"Relatórios de treino/incompletos ignorados: {ignored}")
         df = pd.concat(frames, ignore_index=True)
     else:
         if csv_path:
