@@ -244,6 +244,8 @@ def main():
     print("="*70)
     print(f"📁 Raiz de busca: {args.root}")
     print(f"🎯 Dataset alvo : {args.dataset}")
+    if not os.path.isfile(args.dataset) or os.path.getsize(args.dataset) == 0:
+        raise FileNotFoundError(f"Dataset alvo não encontrado ou vazio: {args.dataset}")
 
     todos_resultados = []
     pastas_processadas = set()
