@@ -91,28 +91,36 @@ def rodar_inferencia(config_path, dataset_novo_path):
 
     if target_file:
         print(f"🔗 Carregando pesos do modelo de: {target_file}")
-        if target_file.endswith('.pkl'):
+        if target_file.endswith(".pkl"):
             with open(target_file, "rb") as pf:
                 loaded_obj = pickle.load(pf)
-                
-            # --- ANTI-MATRIOSKA ABSOLUTO ---
-            # Se o objeto carregado já for o nosso Wrapper completo, usamos ele e descartamos o base_model!
-            if hasattr(loaded_obj, "score") or hasattr(loaded_obj, "predict"):
+
+            # Model wrappers save their underlying estimator (for example,
+            # sklearn MLPClassifier). Its .score(X) is an accuracy API that
+            # requires y, not an anomaly score. Reload through the wrapper.
+            if isinstance(loaded_obj, type(base_model)):
                 final_model = loaded_obj
-                print(f"🤖 Wrapper nativo blindado recuperado: {type(final_model).__name__}")
+                print(f"🤖 Wrapper nativo recuperado: {type(final_model).__name__}")
+            elif isinstance(loaded_obj, dict) and hasattr(base_model, "load_state_dict"):
+                base_model.load_state_dict(loaded_obj)
+                final_model = base_model
+            elif hasattr(base_model, "load"):
+                base_model.load(model_path)
+                final_model = base_model
+                print(f"🤖 Estimador carregado pelo wrapper: {type(base_model).__name__}")
             else:
-                # Fallback para PyTorch (se for apenas state_dict)
-                if isinstance(loaded_obj, dict) and hasattr(base_model, "load_state_dict"):
-                    base_model.load_state_dict(loaded_obj)
-                    final_model = base_model
-                else:
-                    final_model = loaded_obj
+                final_model = loaded_obj
         else:
-            loaded_obj = torch.load(target_file, map_location=torch.device("cpu"), weights_only=False)
+            loaded_obj = torch.load(
+                target_file, map_location=torch.device("cpu"), weights_only=False
+            )
             if isinstance(loaded_obj, torch.nn.Module):
                 final_model = loaded_obj
             elif isinstance(loaded_obj, dict) and hasattr(base_model, "load_state_dict"):
                 base_model.load_state_dict(loaded_obj)
+                final_model = base_model
+            elif hasattr(base_model, "load"):
+                base_model.load(model_path)
                 final_model = base_model
             else:
                 final_model = loaded_obj
