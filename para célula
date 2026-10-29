@@ -27,12 +27,20 @@ if not DATASET.is_file() or DATASET.stat().st_size == 0:
 
 with DATASET.open("r", encoding="utf-8") as arquivo:
     primeira_linha = next((linha.strip() for linha in arquivo if linha.strip()), "")
-if not primeira_linha.startswith("{"):
-    raise ValueError(
-        f"{DATASET} não parece estar em formato JSONL (cada linha deve ser um objeto JSON)."
-    )
-json.loads(primeira_linha)
-print(f"Dataset da demo: {DATASET} ({DATASET.stat().st_size / 1024**2:.1f} MiB)")
+if primeira_linha.startswith("{"):
+    json.loads(primeira_linha)
+    formato = "JSONL"
+else:
+    # DatasetAdapter também aceita CSV; valida somente a leitura do cabeçalho.
+    import pandas as pd
+    amostra = pd.read_csv(DATASET, nrows=1)
+    if amostra.empty:
+        raise ValueError(f"Dataset sem registros: {DATASET}")
+    formato = "CSV"
+print(
+    f"Dataset da demo: {DATASET} ({DATASET.stat().st_size / 1024**2:.1f} MiB; "
+    f"formato detectado: {formato})"
+)
 
 # CÉLULA 2 — preparação prévia: treina uma vez e salva os oito modelos
 # Uma semente (42), mantendo o protocolo da tese:
