@@ -2,8 +2,8 @@ metadata:
   name: Demo de banca - modelos generalistas e especialista em brute force
   role: Reexecução demonstrativa dos protocolos YAML 02 e YAML 05 com uma semente
 settings:
-  results_root: results/demo_banca
-  cache_root: data/GLOBAL_CACHE_DETECTOR_demo_banca
+  results_root: results/demo_banca_v2
+  cache_root: data/GLOBAL_CACHE_DETECTOR_demo_banca_v2
   # Uma semente para a demo; resultados ilustrativos, não substituem a campanha confirmatória.
   seeds: [42]
   save_checkpoints: true
