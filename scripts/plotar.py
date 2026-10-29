@@ -305,6 +305,152 @@ def generate_demo_plots(root, output_dir, csv_path=None, source="training"):
     print(f"Resumo por combinação: {summary_path}")
 
 
+def generate_batch_inference_plots(csv_path, output_dir, confusion_percentile=95):
+    """Gera figuras da inferência batch em um dataset de destino comum."""
+    csv_path = Path(csv_path)
+    output_dir = Path(output_dir)
+    if not csv_path.is_file():
+        raise FileNotFoundError(f"CSV de inferência não encontrado: {csv_path}")
+    df = pd.read_csv(csv_path)
+    required = {
+        "source_dir", "inference_dataset", "model_preset", "split_strategy",
+        "threshold_mode", "percentile", "precision", "recall", "f1_score",
+        "pr_auc", "roc_auc", "lift_pr", "prevalence", "tp", "fp", "tn", "fn",
+    }
+    missing = sorted(required - set(df.columns))
+    if missing:
+        raise ValueError("Colunas ausentes no CSV batch: " + ", ".join(missing))
+    if df.empty:
+        raise ValueError(f"CSV de inferência sem resultados: {csv_path}")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    df["percentile"] = pd.to_numeric(df["percentile"], errors="coerce")
+    df["label"] = df["source_dir"].map(lambda value: Path(str(value)).name)
+    grouped = df.groupby("source_dir", sort=True, dropna=False)
+    operating = df[df["percentile"] == confusion_percentile].copy()
+    if operating.empty:
+        raise ValueError(
+            f"O CSV não contém o percentil {confusion_percentile} para gerar matrizes."
+        )
+    operating.sort_values("source_dir", inplace=True)
+
+    # Matrizes de confusão no mesmo ponto de operação para comparação entre modelos.
+    count = len(operating)
+    columns = min(4, count)
+    rows = math.ceil(count / columns)
+    fig, axes = plt.subplots(rows, columns, figsize=(4.6 * columns, 4.2 * rows))
+    axes = np.atleast_1d(axes).ravel()
+    for index, (_, row) in enumerate(operating.iterrows()):
+        matrix = np.array([
+            [int(row["tn"]), int(row["fp"])],
+            [int(row["fn"]), int(row["tp"])],
+        ])
+        ax = axes[index]
+        sns.heatmap(
+            matrix, annot=True, fmt="d", cmap="Blues", cbar=False, square=True,
+            ax=ax, xticklabels=["Normal", "Anomalia"],
+            yticklabels=["Normal", "Anomalia"],
+            annot_kws={"size": 10, "weight": "bold"},
+        )
+        ax.set_xlabel("Classe predita")
+        ax.set_ylabel("Classe real")
+        ax.set_title(
+            f"{row['label']}\n{row['model_preset']} · {row['split_strategy']} · "
+            f"{row['threshold_mode']} · P{int(row['percentile'])}",
+            fontsize=8,
+        )
+    for ax in axes[count:]:
+        ax.set_visible(False)
+    dataset_name = str(df["inference_dataset"].iloc[0])
+    fig.suptitle(
+        f"Inferência em {dataset_name} — matrizes no percentil {confusion_percentile}",
+        fontsize=14, fontweight="bold",
+    )
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    confusion_path = output_dir / "matrizes_confusao_test_prev_5pct.png"
+    fig.savefig(confusion_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+
+    # Curvas das métricas de decisão ao longo da varredura de percentis.
+    labels = []
+    for _, row in df.drop_duplicates("source_dir").sort_values("source_dir").iterrows():
+        labels.append(f"{row['label']} · {row['model_preset']} · {row['split_strategy']} · {row['threshold_mode']}")
+    source_order = sorted(df["source_dir"].dropna().unique())
+    metrics = [("precision", "Precisão"), ("recall", "Recall"), ("f1_score", "F1")]
+    fig, axes = plt.subplots(3, 1, figsize=(15, 12), sharex=True)
+    palette = sns.color_palette("husl", n_colors=max(1, len(source_order)))
+    for ax, (metric, title) in zip(axes, metrics):
+        for color, source in zip(palette, source_order):
+            part = df[df["source_dir"] == source].sort_values("percentile")
+            if part.empty:
+                continue
+            ax.plot(part["percentile"], part[metric], marker="o", linewidth=1.5,
+                    markersize=3, color=color, label=labels[source_order.index(source)])
+        ax.set_ylabel(title)
+        ax.set_ylim(0, 1.05)
+        ax.grid(axis="y", alpha=0.25)
+    axes[0].legend(loc="center left", bbox_to_anchor=(1.01, 0.5), fontsize=7)
+    axes[-1].set_xlabel("Percentil do limiar calculado no dataset de destino")
+    fig.suptitle(f"Métricas por percentil — {dataset_name}", fontsize=14, fontweight="bold")
+    fig.tight_layout(rect=[0, 0, 0.78, 0.96])
+    curves_path = output_dir / "metricas_por_percentil_test_prev_5pct.png"
+    fig.savefig(curves_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+
+    # Métricas de ranking e Lift_PR não dependem do ponto operacional escolhido.
+    ranking = df.sort_values("percentile").drop_duplicates("source_dir").copy()
+    ranking.sort_values("source_dir", inplace=True)
+    summary_cols = [
+        "source_dir", "inference_dataset", "model_preset", "split_strategy",
+        "threshold_mode", "seed", "n_windows", "n_anomalies_true", "prevalence",
+        "pr_auc", "lift_pr", "roc_auc",
+    ]
+    summary_cols = [column for column in summary_cols if column in ranking.columns]
+    summary = ranking[summary_cols].reset_index(drop=True)
+    summary_path = output_dir / "resumo_inferencia_test_prev_5pct.csv"
+    summary.to_csv(summary_path, index=False)
+
+    x = np.arange(len(summary))
+    short_labels = [
+        f"{Path(str(row['source_dir'])).name}\n{row['model_preset']} · "
+        f"{row['split_strategy']} · {row['threshold_mode']}"
+        for _, row in summary.iterrows()
+    ]
+    fig, axes = plt.subplots(3, 1, figsize=(max(14, len(summary) * 1.1), 9), sharex=True)
+    for ax, metric, title in zip(
+        axes, ["pr_auc", "lift_pr", "roc_auc"], ["PR-AUC", "Lift_PR", "ROC-AUC"]
+    ):
+        values = pd.to_numeric(summary[metric], errors="coerce").to_numpy()
+        bars = ax.bar(x, values, color="#3986a8")
+        ax.set_ylabel(title)
+        ax.grid(axis="y", alpha=0.25)
+        for bar, value in zip(bars, values):
+            if np.isfinite(value):
+                ax.annotate(f"{value:.3f}", (bar.get_x() + bar.get_width()/2, value),
+                            xytext=(0, 3), textcoords="offset points",
+                            ha="center", fontsize=7)
+    axes[-1].set_xticks(x)
+    axes[-1].set_xticklabels(short_labels, rotation=45, ha="right", fontsize=7)
+    fig.suptitle(f"Ranking e Lift_PR — {dataset_name}", fontsize=14, fontweight="bold")
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    ranking_path = output_dir / "ranking_lift_test_prev_5pct.png"
+    fig.savefig(ranking_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+
+    print(f"Dataset de inferência: {dataset_name}")
+    print(f"Resultados batch: {len(df)} linhas; modelos: {len(summary)}")
+    print(f"Matrizes de confusão: {confusion_path}")
+    print(f"Curvas por percentil: {curves_path}")
+    print(f"PR-AUC, Lift_PR e ROC-AUC: {ranking_path}")
+    print(f"Resumo tabular: {summary_path}")
+    return {
+        "confusion": confusion_path,
+        "curves": curves_path,
+        "ranking": ranking_path,
+        "summary": summary_path,
+    }
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Gera gráficos agregados dos resultados da demo da banca."
