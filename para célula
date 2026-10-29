@@ -130,6 +130,12 @@ except json.JSONDecodeError as erro:
 
 if not RUN_ROOT.is_dir():
     raise FileNotFoundError(f"Modelos da demo não encontrados: {RUN_ROOT}. Execute a célula 2.")
+model_artifacts = list(RUN_ROOT.glob("*/trainer_meta.pkl"))
+if len(model_artifacts) != 16:
+    raise RuntimeError(
+        f"Esperava 16 modelos (generalista/brute force × 2 partições × 2 modelos × "
+        f"2 limiares); encontrei {len(model_artifacts)} em {RUN_ROOT}."
+    )
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 subprocess.run(
@@ -146,6 +152,20 @@ subprocess.run(
     ],
     check=True,
 )
+
+resultados_batch = pd.read_csv(CSV_RESULTADOS)
+fontes_batch = resultados_batch["source_dir"].nunique()
+dataset_batch = set(resultados_batch["inference_dataset"].dropna().astype(str))
+percentis_batch = set(pd.to_numeric(resultados_batch["percentile"], errors="coerce").dropna())
+if fontes_batch != 16 or len(resultados_batch) != 160:
+    raise RuntimeError(
+        f"Inferência incompleta: esperava 160 resultados (16 modelos × 10 percentis), "
+        f"recebi {len(resultados_batch)} linhas de {fontes_batch} modelos."
+    )
+if dataset_batch != {TARGET_DATASET.name} or percentis_batch != set(range(90, 100)):
+    raise RuntimeError(
+        "A saída não corresponde exatamente a test_prev_5pct.jsonl nos percentis 90–99."
+    )
 
 figuras = generate_batch_inference_plots(
     csv_path=CSV_RESULTADOS,
