@@ -15,13 +15,15 @@ except ImportError:
     HAS_IFOREST = False
 
 
+TRAINING_PROTOCOL_VERSION = "train_val_independent_v4_features_v2"
+
+
 class Trainer:
     def _checkpoint_uses_current_protocol(self, meta_path):
-        """Reject checkpoints created before validation was kept out of training."""
         try:
             with open(meta_path, "rb") as f:
                 meta = pickle.load(f)
-            return meta.get("training_protocol") == "train_val_independent_v3_benign_early_stop"
+            return meta.get("training_protocol") == TRAINING_PROTOCOL_VERSION
         except Exception:
             return False
 
@@ -34,30 +36,42 @@ class Trainer:
         self.output_dir = config.get("output_dir", "./output")
         os.makedirs(self.output_dir, exist_ok=True)
 
+        # Opcionais: se anexados antes de run(), são persistidos no meta.
+        # O detectar.py atual injeta post-hoc; esta é a safety net.
+        self.feature_processor = None
+        self.temporal_builder = None
+
         self.user_thresholds = {}
         self.global_threshold = 0.0
 
     @staticmethod
     def _select_training_events(train_df, target="Is_Anomaly"):
-        """Return benign training events used to fit per-user feature scalers."""
         if target not in train_df.columns:
             return train_df.copy()
         return train_df.loc[train_df[target] == 0].copy()
 
     def _build_benign_training_sequences(self, train_df, feature_columns=None):
-        """Fit scalers on benign train events and keep only all-benign train windows.
-
-        Windows are built in the original event order before filtering, so removing an
-        attack cannot make events on either side appear adjacent. The model's internal
-        early-stopping split is consequently drawn only from benign training windows.
-        The external mixed validation partition remains reserved for threshold tuning.
-        """
         target = self.config.get("data", {}).get("target_col", "Is_Anomaly")
         benign_events = self._select_training_events(train_df, target=target)
-        for user_id, group in benign_events.groupby("UserID"):
+
+        # 1. Scaler per-user (comportamento anterior)
+        for user_id, group in benign_events.groupby("UserID", sort=False):
             self._prepare_and_scale_X(
                 group, user_id, fit=True, feature_columns=feature_columns
             )
+
+        # 2. Scaler global fallback (cold-start) — fitado APENAS sobre benignos
+        if self.feature_columns is not None and len(benign_events) > 1:
+            try:
+                X_global = benign_events.reindex(
+                    columns=self.feature_columns, fill_value=0
+                ).values.astype(np.float32)
+                if X_global.shape[0] > 1:
+                    global_scaler = StandardScaler()
+                    global_scaler.fit(X_global)
+                    self.scalers["__GLOBAL__"] = global_scaler
+            except Exception as e:
+                print(f"⚠️ Global scaler fallback não criado: {e}")
 
         X_all, indices, users, labels = self._build_sequences(
             train_df, fit=False, return_labels=True
@@ -69,74 +83,6 @@ class Trainer:
             users = users[benign_windows]
         return X_all, indices, users, labels
 
-    def _build_attack_specific_sequences(
-        self, df, attack_type, fit=False, feature_columns=None,
-        require_positive=False
-    ):
-        """Build chronological windows for one attack type.
-
-        Windows containing other anomaly types are excluded instead of being
-        relabeled as benign. Rows stay in their original order, so filtering
-        does not create artificial adjacency between events.
-        """
-        target = self.config.get("data", {}).get("target_col", "Is_Anomaly")
-        if target not in df.columns:
-            raise ValueError(f"Coluna de rótulo '{target}' ausente para o modo especialista.")
-        if "AnomalyType" not in df.columns:
-            raise ValueError(
-                "target_attack_type foi definido, mas a coluna 'AnomalyType' não existe."
-            )
-
-        target_name = str(attack_type).strip().casefold()
-        attack_names = df["AnomalyType"].astype("string").str.strip().str.casefold()
-        is_anomaly = pd.to_numeric(df[target], errors="coerce").fillna(0).eq(1)
-        target_events = is_anomaly & attack_names.eq(target_name)
-        other_attack_events = is_anomaly & ~target_events
-
-        if require_positive and not target_events.any():
-            raise ValueError(
-                f"Nenhum evento do ataque alvo '{attack_type}' foi encontrado no treino."
-            )
-
-        target_df = df.copy()
-        target_df[target] = target_events.to_numpy(dtype=np.int8)
-        X, indices, users, labels = self._build_sequences(
-            target_df, fit=fit, return_labels=True,
-            feature_columns=feature_columns
-        )
-
-        other_df = df.copy()
-        other_df[target] = other_attack_events.to_numpy(dtype=np.int8)
-        _, _, _, other_labels = self._build_sequences(
-            other_df, fit=False, return_labels=True,
-            feature_columns=feature_columns
-        )
-
-        if labels is None or other_labels is None or len(labels) != len(other_labels):
-            raise ValueError(
-                f"Não foi possível construir janelas rotuladas para o ataque '{attack_type}'."
-            )
-
-        eligible = other_labels == 0
-        X, indices, users, labels = (
-            X[eligible], indices[eligible], users[eligible], labels[eligible]
-        )
-        positive_windows = int(np.sum(labels == 1))
-        print(
-            f"   🔎 [ESPECIALISTA] {attack_type}: "
-            f"{int(target_events.sum())} eventos alvo, "
-            f"{positive_windows} janelas positivas elegíveis."
-        )
-        if require_positive and positive_windows == 0:
-            raise ValueError(
-                f"Nenhuma janela elegível do ataque '{attack_type}' restou após "
-                "excluir janelas contaminadas por outros ataques."
-            )
-        return X, indices, users, labels
-
-    # =========================================================
-    # F2-SCORE (COM PROTEÃ‡ÃƒO)
-    # =========================================================
     def _compute_f2_score(self, y_true, y_pred):
         if y_true is None or len(y_true) == 0:
             return 0.0
@@ -155,7 +101,6 @@ class Trainer:
         return (1 + beta**2) * (precision * recall) / ((beta**2 * precision) + recall)
 
     def _personalized_thresholds(self, scores, users, labels, percentile, min_windows=5):
-        """Calibrate only users with enough validation windows and positive examples."""
         if labels is None:
             return {}
         scores = np.asarray(scores)
@@ -168,9 +113,6 @@ class Trainer:
                 thresholds[str(uid)] = float(np.percentile(scores[user_mask], percentile))
         return thresholds
 
-    # =========================================================
-    # PREPARAÃ‡ÃƒO E ESCALONAMENTO
-    # =========================================================
     def _prepare_and_scale_X(self, group, user_id, fit=False, feature_columns=None):
         if fit and feature_columns is not None:
             self.feature_columns = feature_columns
@@ -193,19 +135,25 @@ class Trainer:
             X_scaled = scaler.fit_transform(X_arr)
             self.scalers[str(user_id)] = scaler
         else:
-            scaler = self.scalers.get(str(user_id))
+            # Fallback: usuário → global → identidade (último caso)
+            scaler = self.scalers.get(str(user_id)) or self.scalers.get("__GLOBAL__")
             X_scaled = scaler.transform(X_arr) if scaler else X_arr
 
         return X_scaled
 
-    # =========================================================
-    # CONSTRUÃ‡ÃƒO DE JANELAS (SLIDING WINDOWS)
-    # =========================================================
     def _build_sequences(self, df, fit=False, return_labels=False, feature_columns=None):
         X_all, indices_all, users_all, labels_all = [], [], [], []
         target = self.config.get("data", {}).get("target_col", "Is_Anomaly")
 
-        for user_id, group in df.groupby("UserID"):
+        grouping = self.config.get("model", {}).get("window_grouping", "user")
+        if grouping == "session" and "session_id" in df.columns:
+            iterator = df.groupby(["UserID", "session_id"], sort=False)
+        else:
+            iterator = df.groupby("UserID", sort=False)
+
+        for key, group in iterator:
+            user_id = key[0] if isinstance(key, tuple) else key
+
             X = self._prepare_and_scale_X(group, user_id, fit=fit, feature_columns=feature_columns)
             if len(X) < self.sequence_length:
                 continue
@@ -232,9 +180,6 @@ class Trainer:
             np.concatenate(labels_all) if labels_all else None
         )
 
-    # =========================================================
-    # CÃLCULO DE SCORES (PADRONIZADO)
-    # =========================================================
     def _calculate_scores(self, X):
         if X is None or len(X) == 0:
             return np.array([])
@@ -242,38 +187,40 @@ class Trainer:
         is_if_model = HAS_IFOREST and isinstance(self.model, IsolationForest)
         model_type_name = type(self.model).__name__.lower()
 
-        # Trata Isolation Forest
         if is_if_model or "isolationforest" in model_type_name or "iforest" in model_type_name:
             if hasattr(self.model, "decision_function"):
                 return -self.model.decision_function(X)
             elif hasattr(self.model, "score_samples"):
                 return -self.model.score_samples(X)
 
-        # Trata modelos customizados com .score()
         if hasattr(self.model, "score"):
             scores = self.model.score(X)
             if self.config.get("model", {}).get("auto_invert_scores", False) and np.mean(scores) < 0:
                 return -scores
             return scores
 
-        raise ValueError("âŒ Erro: O Modelo nÃ£o possui um mÃ©todo de escoragem vÃ¡lido!")
+        raise ValueError("❌ Erro: O Modelo não possui um método de escoragem válido!")
 
-    # =========================================================
-    # MÃ‰TODO PRINCIPAL: RUN (COM CORREÃ‡ÃƒO DE ÃNDICES)
-    # =========================================================
+    def _persist_meta(self, meta_path):
+        """Persiste scalers, feature_columns e (se anexados) fp/tb."""
+        meta_dict = {
+            "scalers": self.scalers,
+            "feature_columns": self.feature_columns,
+            "training_protocol": TRAINING_PROTOCOL_VERSION,
+        }
+        if self.feature_processor is not None:
+            meta_dict["feature_processor"] = self.feature_processor
+        if self.temporal_builder is not None:
+            meta_dict["temporal_builder"] = self.temporal_builder
+        with open(meta_path, "wb") as f:
+            pickle.dump(meta_dict, f)
+
     def run(self, train_df, val_df, test_df, feature_columns=None):
-        """
-        Executa o treino, calibraÃ§Ã£o de limiares e preparaÃ§Ã£o para avaliaÃ§Ã£o.
-        CORREÃ‡ÃƒO: reset_index(drop=True) garantido para evitar duplicatas.
-        """
-        # ðŸ”¥ CORREÃ‡ÃƒO CRÃTICA: Garante Ã­ndices Ãºnicos em todos os DataFrames
-        # Resolve o erro "cannot reindex on an axis with duplicate labels"
         train_df = train_df.reset_index(drop=True)
         val_df = val_df.reset_index(drop=True)
         if test_df is not None:
             test_df = test_df.reset_index(drop=True)
 
-        # Reset de estado (importante para multi-seed)
         self.user_thresholds = {}
         self.global_threshold = 0.0
 
@@ -292,9 +239,10 @@ class Trainer:
         model_path = os.path.join(self.output_dir, "saved_model")
         meta_path = os.path.join(self.output_dir, "trainer_meta.pkl")
 
-        # -------------------- TREINO (com checkpoint) --------------------
-        if do_resume and os.path.exists(model_path) and os.path.exists(meta_path) and self._checkpoint_uses_current_protocol(meta_path):
-            print("ðŸ”„ [Trainer] Checkpoint detectado. Retomando execuÃ§Ã£o...")
+        # -------------------- TREINO --------------------
+        if (do_resume and os.path.exists(model_path) and os.path.exists(meta_path)
+                and self._checkpoint_uses_current_protocol(meta_path)):
+            print("🔄 [Trainer] Checkpoint detectado. Retomando execução...")
             with open(meta_path, "rb") as f:
                 meta = pickle.load(f)
                 self.scalers = meta['scalers']
@@ -302,16 +250,9 @@ class Trainer:
             if hasattr(self.model, "load"):
                 self.model.load(model_path)
         else:
-            print(f"ðŸš€ [Trainer] Iniciando treino do zero (Modo: {thresh_mode})...")
+            print(f"🚀 [Trainer] Iniciando treino do zero (Modo: {thresh_mode})...")
 
-            # O treino supervisionado usa somente rÃ³tulos da partiÃ§Ã£o de treino.
-            # A validaÃ§Ã£o fica reservada Ã  calibraÃ§Ã£o e nunca fornece exemplos ao modelo.
-            if is_supervised and target_attack:
-                X_train, _, _, y_train = self._build_attack_specific_sequences(
-                    train_df, target_attack, fit=True,
-                    feature_columns=feature_columns, require_positive=True
-                )
-            elif is_supervised:
+            if is_supervised:
                 X_train, _, _, y_train = self._build_sequences(
                     train_df, fit=True, return_labels=True,
                     feature_columns=feature_columns
@@ -323,64 +264,56 @@ class Trainer:
                 if y_train is not None:
                     y_train = y_train[y_train == 0]
             if len(X_train) == 0:
-                raise ValueError("Nenhuma janela de treino elegível foi gerada para o protocolo escolhido.")
+                raise ValueError("Nenhuma janela de treino elegível foi gerada.")
 
             if y_train is None:
                 y_train = np.zeros(len(X_train))
 
             if is_supervised and len(np.unique(y_train)) < 2:
                 raise ValueError(
-                    "Treino supervisionado contÃ©m uma Ãºnica classe. "
-                    "NÃ£o use a validaÃ§Ã£o para obter positivos; forneÃ§a ataques "
-                    "na partiÃ§Ã£o de treino ou retire o modelo supervisionado "
-                    "deste protocolo confirmatÃ³rio."
+                    "Treino supervisionado com uma única classe. "
+                    "Forneça ataques na partição de treino ou remova o modelo supervisionado."
                 )
 
-            # Fit do modelo
             if hasattr(self.model, "fit"):
                 if is_supervised:
                     self.model.fit(X_train, y=y_train)
                 else:
                     self.model.fit(X_train)
 
-            # Salva modelo e metadados
             if save_model:
                 os.makedirs(model_path, exist_ok=True)
                 if hasattr(self.model, "save"):
                     self.model.save(model_path)
-                with open(meta_path, "wb") as f:
-                    pickle.dump({'scalers': self.scalers, 'feature_columns': self.feature_columns, 'training_protocol': 'train_val_independent_v3_benign_early_stop'}, f)
-                print(f"ðŸ’¾ [Trainer] Modelo e metadados salvos com sucesso em: {model_path}")
+                self._persist_meta(meta_path)
+                print(f"💾 [Trainer] Modelo e metadados salvos em: {model_path}")
 
-        # -------------------- VALIDAÃ‡ÃƒO (calibraÃ§Ã£o de limiares) --------------------
-        print("\n--- [Trainer] Gerando Janelas de VALIDAÃ‡ÃƒO ---")
+        # -------------------- VALIDAÇÃO --------------------
+        print("\n--- [Trainer] Gerando Janelas de VALIDAÇÃO ---")
 
-        if target_attack:
-            X_val, _, val_users, y_val = self._build_attack_specific_sequences(
-                val_df, target_attack, fit=False
-            )
-        else:
-            X_val, _, val_users, y_val = self._build_sequences(
-                val_df, fit=False, return_labels=True
-            )
+        if target_attack and "AnomalyType" in val_df.columns:
+            print(f"   🔍 [ESPECIALISTA] Filtrando validação para '{target_attack}'...")
+            mask = (val_df[target] == 0) | (val_df["AnomalyType"] == target_attack)
+            val_df = val_df[mask].copy()
+
+        X_val, _, val_users, y_val = self._build_sequences(val_df, fit=False, return_labels=True)
         if X_val is None or len(X_val) == 0:
-            raise ValueError("âŒ Erro CrÃ­tico: Conjunto de VALIDAÃ‡ÃƒO gerou 0 janelas.")
+            raise ValueError("❌ Conjunto de VALIDAÇÃO gerou 0 janelas.")
 
         val_scores = self._calculate_scores(X_val)
 
         if y_val is not None and np.sum(y_val) > 0:
-            print(f"   âœ… ValidaÃ§Ã£o contÃ©m {int(np.sum(y_val))} janelas anÃ´malas.")
+            print(f"   ✅ Validação contém {int(np.sum(y_val))} janelas anômalas.")
         else:
-            print(f"   âŒ ATENÃ‡ÃƒO: ValidaÃ§Ã£o livre de anomalias registradas!")
+            print(f"   ❌ ATENÇÃO: Validação livre de anomalias!")
 
         best_p, best_f2 = 95.0, -1.0
-        print("\n--- [Trainer] DefiniÃ§Ã£o de Limiares de Alarme ---")
+        print("\n--- [Trainer] Definição de Limiares ---")
 
-        # ---------- LIMIAR FIXO (Absoluto ou Percentil) ----------
         if fixed_threshold is not None:
             self.global_threshold = float(fixed_threshold)
             self.user_thresholds = {"__GLOBAL_FALLBACK__": self.global_threshold}
-            print(f"âš–ï¸ [YAML] Limiar absoluto fixado em: {fixed_threshold}")
+            print(f"⚖️ [YAML] Limiar absoluto fixado: {fixed_threshold}")
 
         elif fixed_percentile is not None:
             best_p = float(fixed_percentile)
@@ -390,18 +323,17 @@ class Trainer:
                 self.user_thresholds.update(
                     self._personalized_thresholds(val_scores, val_users, y_val, best_p)
                 )
-            print(f"âš–ï¸ [YAML] Percentil fixado em: {best_p}%")
+            print(f"⚖️ [YAML] Percentil fixado: {best_p}%")
 
-        # ---------- LIMIAR OTIMIZADO (F2-Score) ----------
         else:
             if y_val is not None and np.sum(y_val) > 0:
-                print(f"ðŸ§  [AUTO] Otimizando curva de decisÃ£o dinamicamente com F2-Score...")
+                print(f"🧠 [AUTO] Otimizando com F2-Score...")
                 calibration_cfg = train_cfg.get("threshold_search", {})
                 percentile_min = float(calibration_cfg.get("percentile_min", 0.0))
                 percentile_max = float(calibration_cfg.get("percentile_max", 99.5))
                 percentile_step = float(calibration_cfg.get("percentile_step", 0.5))
                 if not (0 <= percentile_min < percentile_max <= 100) or percentile_step <= 0:
-                    raise ValueError("ConfiguraÃ§Ã£o invÃ¡lida em training.threshold_search.")
+                    raise ValueError("Configuração inválida em training.threshold_search.")
                 for p in np.arange(percentile_min, percentile_max + percentile_step / 2, percentile_step):
                     t_glob = np.percentile(val_scores, p)
                     if thresh_mode == "per_user":
@@ -415,10 +347,10 @@ class Trainer:
                     f2 = self._compute_f2_score(y_val, y_pred)
                     if f2 > best_f2:
                         best_f2, best_p = f2, p
-                print(f"âœ… [AUTO] OtimizaÃ§Ã£o concluÃ­da. Percentil ideal: {best_p:.1f}% (F2-Score: {best_f2:.4f})")
+                print(f"✅ [AUTO] Percentil ideal: {best_p:.1f}% (F2: {best_f2:.4f})")
             else:
                 best_p = 99.0
-                print(f"âš ï¸ [AUTO] ValidaÃ§Ã£o limpa. Adotando percentil fixo de seguranÃ§a: {best_p}%")
+                print(f"⚠️ [AUTO] Validação limpa. Percentil de segurança: {best_p}%")
 
             self.global_threshold = float(np.percentile(val_scores, best_p)) if val_scores.size > 0 else 0.5
             self.user_thresholds = {"__GLOBAL_FALLBACK__": self.global_threshold}
@@ -427,17 +359,11 @@ class Trainer:
                     self._personalized_thresholds(val_scores, val_users, y_val, best_p)
                 )
 
-        # Salva limiares
         with open(os.path.join(self.output_dir, "user_thresholds.json"), "w") as f:
             json.dump(self.user_thresholds, f, indent=4)
 
-        print("\n--- [Trainer] ExecuÃ§Ã£o Finalizada com Sucesso ---")
+        print("\n--- [Trainer] Execução Finalizada ---")
         return {
             "val_f2": float(best_f2) if best_f2 != -1 else -1.0,
             "global_threshold": self.global_threshold
         }
-
-
-
-
-

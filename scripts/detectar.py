@@ -5,6 +5,9 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 import sys
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 import yaml
 import copy
 import json
@@ -97,9 +100,9 @@ class ExperimentRunner:
             X_test, indices, users, y_test = trainer._build_sequences(test_df, fit=False, return_labels=True)
 
         if len(X_test) == 0:
-            if verbose: print(f"   ⚠️ Nenhuma sequência válida para {subset_name}.")
-            return {"pr_auc": 0.0, "roc_auc": 0.0, "f1_score": 0.0, "precision": 0.0, "recall": 0.0, 
-                    "tp": 0, "fp": 0, "tn": 0, "fn": 0, "elapsed_sec": 0.0, "mem_peak_mb": 0.0}
+            raise RuntimeError(
+                f"Subset '{subset_name}' gerou 0 janelas. Não é métrica zero — é execução inválida."
+            )
 
         scores = trainer._calculate_scores(X_test)
         
@@ -121,11 +124,14 @@ class ExperimentRunner:
         eval_config["output_dir"] = output_dir
         
         try:
-            metrics = run_external_evaluation(eval_config, test_df=test_df, scores=scores, indices=indices, verbose=verbose)
+            metrics = run_external_evaluation(
+                eval_config, test_df=test_df, scores=scores, indices=indices, verbose=verbose
+            )
         except Exception as e:
-            if verbose: print(f"   ❌ Erro na avaliação de {subset_name}: {e}")
-            metrics = {"pr_auc": 0.0, "roc_auc": 0.0, "f1_score": 0.0, "precision": 0.0, "recall": 0.0, "tp": 0, "fp": 0, "tn": 0, "fn": 0}
-
+            # Falha de avaliação NÃO é "desempenho ruim". É execução inválida.
+            raise RuntimeError(
+                f"Falha ao avaliar subset '{subset_name}' em {output_dir}: {e}"
+            ) from e
         end_time = time.perf_counter()
         try:
             mem_peak_mb = psutil.Process().memory_info().peak_wset / (1024*1024) if sys.platform == 'win32' else psutil.Process().memory_info().rss / (1024*1024)
@@ -133,6 +139,8 @@ class ExperimentRunner:
             mem_peak_mb = 0.0
 
         return {**metrics, "elapsed_sec": end_time - start_time, "mem_peak_mb": mem_peak_mb}
+
+
 
     def run(self):
         datasets = self.config.get("datasets", [])
@@ -486,6 +494,11 @@ class ExperimentRunner:
                             
                             # 🔥 Lê a métrica de otimização do YAML (com fallback para f2)
                             optim_metric = config_final.get("training", {}).get("optimization_metric", "f2")
+                            if optim_metric.lower() != "f2":
+                                raise ValueError(
+                                    f"optimization_metric='{optim_metric}' não suportada. "
+                                    "O Trainer atual implementa apenas F2. Ajuste o YAML."
+                                )
                             
                             results = trainer.run(t_train, t_val, t_test, feature_columns=valid_features)                        
 
